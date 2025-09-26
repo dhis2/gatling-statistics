@@ -4,6 +4,9 @@ version = "0.1.0"
 description = "Calculate and plot statistics from Gatling simulation.csv"
 readme = "README.md"
 requires-python = ">=3.13"
+authors = [{name = "DHIS2"}]
+license = {file = "LICENSE"}
+keywords = ["gatling", "performance", "testing", "statistics", "cli"]
 dependencies = [
     "pandas>=2.0.0",
     "tdigest>=0.5.0",
@@ -16,11 +19,12 @@ dependencies = [
 [project.scripts]
 gstat = "gstat:main"
 
+[project.urls]
+Repository = "https://github.com/dhis2/gatling-statistics"
+Issues = "https://github.com/dhis2/gatling-statistics/issues"
+
 [tool.uv]
 package = true
-
-[tool.setuptools]
-py-modules = ["gstat"]
 
 [dependency-groups]
 dev = [
