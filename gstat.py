@@ -1398,7 +1398,7 @@ def show_plot_with_clipboard(
 
 
 def main():
-    """CLI entry point - can be called as 'percentiles' command."""
+    """CLI entry point - can be called as 'gstat' command."""
     try:
         _main()
     except Exception as e:
