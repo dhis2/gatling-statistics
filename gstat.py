@@ -1399,6 +1399,15 @@ def show_plot_with_clipboard(
 
 def main():
     """CLI entry point - can be called as 'percentiles' command."""
+    try:
+        _main()
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _main():
+    """Internal main function."""
     parser = argparse.ArgumentParser(
         description="Calculate percentiles from Gatling simulation.csv files",
         formatter_class=argparse.RawDescriptionHelpFormatter,
