@@ -156,11 +156,12 @@ class RequestData(NamedTuple):
 class RunData:
     """Data for a complete simulation run."""
 
-    def __init__(self, raw_timestamp: str, directory: Path = None):
+    def __init__(self, raw_timestamp: str, directory: Path = None, suffix: str = ""):
         self.raw_timestamp = raw_timestamp
         self.formatted_timestamp = format_timestamp(raw_timestamp)
         self.datetime_timestamp = parse_gatling_directory_timestamp(raw_timestamp)
         self.directory = directory
+        self.suffix = suffix
         self.requests: OrderedDict[str, RequestData] = OrderedDict()
 
 
@@ -182,13 +183,14 @@ class GatlingData:
         request_name: str,
         request_data: RequestData,
         directory: Path = None,
+        suffix: str = "",
     ) -> None:
         """Add request data maintaining sorted order."""
         if simulation not in self.data:
             self.data[simulation] = OrderedDict()
 
         if run_timestamp not in self.data[simulation]:
-            self.data[simulation][run_timestamp] = RunData(run_timestamp, directory)
+            self.data[simulation][run_timestamp] = RunData(run_timestamp, directory, suffix)
 
         self.data[simulation][run_timestamp].requests[request_name] = request_data
 
@@ -229,15 +231,16 @@ class GatlingData:
         return self.data.get(simulation, {}).get(run_timestamp)
 
 
-def parse_gating_directory_name(dir_name: str) -> tuple[str, str] | None:
-    """Parse directory name to extract simulation name and timestamp from Gatlings report directory
-    naming convention of <simulation>-<timestamp>
+def parse_gating_directory_name(dir_name: str) -> tuple[str, str, str] | None:
+    """Parse directory name to extract simulation name, timestamp, and optional suffix from Gatlings
+    report directory naming convention of <simulation>-<timestamp>[-<suffix>]
 
-    Returns: (simulation, timestamp) or None if format doesn't match
+    Returns: (simulation, timestamp, suffix) or None if format doesn't match
     """
-    match = re.match(r"^(.+)-([0-9]+)$", dir_name)
+    # Match pattern: simulation-timestamp or simulation-timestamp-suffix
+    match = re.match(r"^(.+?)-(\d{17})(?:-(.+))?$", dir_name)
     if match:
-        return match.group(1), match.group(2)
+        return match.group(1), match.group(2), match.group(3) or ""
     return None
 
 
@@ -480,9 +483,15 @@ def _get_run_visibility(
 
 
 def _get_run_label(run: str, gatling_data: GatlingData, simulation: str) -> str:
-    """Get formatted label for a run timestamp."""
+    """Get formatted label for a run timestamp, including suffix if present."""
     run_data = gatling_data.get_run_data(simulation, run)
-    return run_data.formatted_timestamp if run_data else run
+    if not run_data:
+        return run
+
+    label = run_data.formatted_timestamp
+    if run_data.suffix:
+        label = f"{label} ({run_data.suffix})"
+    return label
 
 
 def is_multiple_reports_directory(directory: Path) -> bool:
@@ -533,10 +542,11 @@ def _load_single_directory(gatling_data: GatlingData, directory: Path, method: s
     """Load Gatling data from a directory directly containing one simulation.csv"""
     parsed = parse_gating_directory_name(directory.name)
     if parsed:
-        simulation, run_timestamp = parsed
+        simulation, run_timestamp, suffix = parsed
     else:
         simulation = "unknown"
         run_timestamp = "unknown"
+        suffix = ""
     simulation_csv = directory / "simulation.csv"
     if not simulation_csv.exists():
         raise FileNotFoundError(f"simulation.csv not found in {directory}")
@@ -558,7 +568,7 @@ def _load_single_directory(gatling_data: GatlingData, directory: Path, method: s
         )
 
         gatling_data.add_request_data(
-            simulation, run_timestamp, request_name, request_data, directory
+            simulation, run_timestamp, request_name, request_data, directory, suffix
         )
 
 

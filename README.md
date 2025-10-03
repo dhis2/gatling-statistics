@@ -129,7 +129,7 @@ To enable tab completion for `gstat` commands and options:
 
 ### For zsh
 
-```bash
+```sh
 # Enable bash completion compatibility and register gstat
 echo 'autoload -U bashcompinit && bashcompinit' >> ~/.zshrc
 echo 'eval "$(register-python-argcomplete gstat)"' >> ~/.zshrc
