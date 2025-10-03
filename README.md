@@ -180,6 +180,12 @@ uv run pre-commit install
 # Run the tool locally
 uv run gstat <report_directory>
 
+# Run tests
+uv run python test_trace_mapping.py
+
+# Run tests with verbose output
+uv run python test_trace_mapping.py -v
+
 # Format code with ruff
 uv run ruff format .
 
