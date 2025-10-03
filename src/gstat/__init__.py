@@ -20,6 +20,12 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from tdigest import TDigest
 
+try:
+    from ._version import __git_sha__, __version__
+except ImportError:
+    __version__ = "0.1.0"
+    __git_sha__ = "dev"
+
 percentile_range_colors = {
     "0-50th": "#28a745",  # Green
     "50th-75th": "#A23B72",  # Purple
@@ -1452,6 +1458,11 @@ Examples:
         choices=["exact", "tdigest"],
         default="exact",
         help="Percentile calculation method (default: exact)",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"gstat {__version__} (git: {__git_sha__})",
     )
     argcomplete.autocomplete(parser)
     args = parser.parse_args()
