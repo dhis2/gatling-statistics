@@ -612,6 +612,7 @@ def plot_percentiles_stacked(gatling_data: GatlingData) -> go.Figure:
             run_timestamps = []
             run_hover_labels = []
             run_directories = []
+            run_directory_names = []
             run_numbers = []
             percentiles_data = {
                 "min": [],
@@ -632,6 +633,7 @@ def plot_percentiles_stacked(gatling_data: GatlingData) -> go.Figure:
                     hover_label = run_data.formatted_timestamp if run_data else run_timestamp
                     run_hover_labels.append(hover_label)
                     run_directories.append(str(run_data.directory.absolute()))
+                    run_directory_names.append(run_data.directory.name)
                     run_numbers.append(run_number)
                     for key in percentiles_data:
                         percentiles_data[key].append(request_data.percentiles[key])
@@ -683,6 +685,7 @@ def plot_percentiles_stacked(gatling_data: GatlingData) -> go.Figure:
                             "Range: %{base:.0f}ms - %{customdata[2]:.0f}ms<br>"
                             "Run number: %{customdata[0]}<br>"
                             "Run timestamp: %{customdata[1]}<br>"
+                            "Run directory: %{customdata[4]}<br>"
                             "Click to copy run directory path<br>"
                             "<extra></extra>"
                         ),
@@ -692,6 +695,7 @@ def plot_percentiles_stacked(gatling_data: GatlingData) -> go.Figure:
                                 run_hover_labels,
                                 base_vals + height_vals,
                                 run_directories,
+                                run_directory_names,
                                 strict=False,
                             )
                         ),
@@ -1270,6 +1274,7 @@ def plot_scatter_all(gatling_data: GatlingData) -> go.Figure:
                 # Get run directory and formatted timestamp for click-to-copy functionality
                 run_data = gatling_data.get_run_data(simulation, run_timestamp)
                 run_directory = str(run_data.directory.absolute())
+                run_directory_name = run_data.directory.name
                 run_hover_label = run_data.formatted_timestamp if run_data else run_timestamp
 
                 # Create request numbers (1-indexed)
@@ -1286,6 +1291,7 @@ def plot_scatter_all(gatling_data: GatlingData) -> go.Figure:
                             "Request number: %{customdata[0]}<br>"
                             "Run number: %{customdata[2]}<br>"
                             "Run timestamp: %{customdata[1]}<br>"
+                            "Run directory: %{customdata[4]}<br>"
                             "Click to copy run directory path<br>"
                             "<extra></extra>"
                         ),
@@ -1295,6 +1301,7 @@ def plot_scatter_all(gatling_data: GatlingData) -> go.Figure:
                                 [run_hover_label] * len(response_times),
                                 [run_number] * len(response_times),
                                 [run_directory] * len(response_times),
+                                [run_directory_name] * len(response_times),
                                 strict=False,
                             )
                         ),
