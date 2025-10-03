@@ -703,24 +703,7 @@ def plot_percentiles_stacked(gatling_data: GatlingData) -> go.Figure:
                 )
                 trace_idx += 1
 
-            trace_mapping[(simulation, request_name)] = (start_trace_idx, trace_idx)
-
-    # Add mean lines after all bars (so they appear on top)
-    for simulation in simulations:
-        for request_name in all_requests:
-            # Check if this simulation has this request
-            runs_with_request = []
-            for run_timestamp in gatling_data.get_runs(simulation):
-                if request_name in gatling_data.get_requests(simulation, run_timestamp):
-                    runs_with_request.append(run_timestamp)
-
-            if not runs_with_request:
-                continue
-
-            # Determine visibility
-            is_default = simulation == default_simulation and request_name == default_request
-
-            # Add mean line for each run
+            # Add mean line immediately after bars for this request
             mean_values = [
                 gatling_data.get_request_data(simulation, run_timestamp, request_name).mean
                 for run_timestamp in runs_with_request
@@ -739,10 +722,9 @@ def plot_percentiles_stacked(gatling_data: GatlingData) -> go.Figure:
                     hovertemplate="<b>Mean</b><br>" + "%{y:.0f}ms<br>" + "<extra></extra>",
                 )
             )
+            trace_idx += 1
 
-            # Update trace mapping to include mean line
-            start_idx, end_idx = trace_mapping[(simulation, request_name)]
-            trace_mapping[(simulation, request_name)] = (start_idx, end_idx + 1)
+            trace_mapping[(simulation, request_name)] = (start_trace_idx, trace_idx)
 
     defaults = {"simulation": default_simulation, "request": default_request}
     updatemenus = create_plot_dropdowns(
