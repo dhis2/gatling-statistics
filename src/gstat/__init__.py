@@ -518,13 +518,17 @@ def is_multiple_reports_directory(directory: Path) -> bool:
     return False
 
 
-def load_gatling_data(directory: Path, method: str = "exact") -> GatlingData:
+def load_gatling_data(directory: Path, method: str = "exact", exclude: str = None) -> GatlingData:
     """Load all Gatling data from directory, handling both single and multi-directory cases."""
     gatling_data = GatlingData(directory)
 
     if is_multiple_reports_directory(directory):
         for subdir in directory.iterdir():
             if not subdir.is_dir():
+                continue
+
+            # Skip directories containing the exclude string
+            if exclude and exclude in subdir.name:
                 continue
 
             try:
@@ -1436,6 +1440,10 @@ Examples:
 
   # With timeline plot showing request duration bars
   gstat --plot timeline ./samples/
+
+  # Exclude directories containing a specific string
+  gstat --exclude warmup ./samples/
+  gstat --plot stacked --exclude warmup ./samples/
         """,
     )
     parser.add_argument(
@@ -1460,6 +1468,11 @@ Examples:
         help="Percentile calculation method (default: exact)",
     )
     parser.add_argument(
+        "--exclude",
+        type=str,
+        help="Exclude directories containing this string (e.g., 'warmup')",
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"gstat {__version__} (git: {__git_sha__})",
@@ -1475,7 +1488,7 @@ Examples:
         print(f"Path is not a directory: {args.report_directory}", file=sys.stderr)
         sys.exit(1)
 
-    gatling_data = load_gatling_data(args.report_directory, args.method)
+    gatling_data = load_gatling_data(args.report_directory, args.method, args.exclude)
 
     if args.plot:
         match args.plot:
