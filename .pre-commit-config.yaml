@@ -5,3 +5,11 @@ repos:
     - id: ruff-check
       args: [ --fix ]
     - id: ruff-format
+- repo: local
+  hooks:
+    - id: generate-version
+      name: Generate version from git tags
+      entry: python3 build.py
+      language: system
+      pass_filenames: false
+      always_run: true

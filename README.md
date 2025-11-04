@@ -17,21 +17,38 @@ runs
 
 ## Installation
 
-### Global Installation (Recommended)
+### Install from Git (Recommended)
 
-Install globally using `uv` for easy access from anywhere (use --reinstall to update):
+Install directly from GitHub using `uv` without needing to clone the repository:
 
 ```bash
-uv tool install .
+# Install latest release (recommended)
+uv tool install git+https://github.com/dhis2/gatling-statistics
+
+# Install specific version
+uv tool install git+https://github.com/dhis2/gatling-statistics@v0.1.0
+
+# Update to latest version
+uv tool install --reinstall git+https://github.com/dhis2/gatling-statistics
 ```
 
-Use the `gstat` command from anywhere.
+Use the `gstat` command from anywhere. Check your installed version:
+
+```bash
+gstat --version
+```
 
 ### Local Development
 
-For development or one-time use:
+For development or contributing:
 
 ```bash
+# Clone and install locally
+git clone https://github.com/dhis2/gatling-statistics.git
+cd gatling-statistics
+uv tool install .
+
+# Or run directly without installing
 uv sync
 uv run gstat <report_directory>
 ```
@@ -205,6 +222,68 @@ This project uses pre-commit hooks to ensure code quality. The hooks automatical
 
 * Format code using `ruff format`
 * Fix linting issues using `ruff check --fix`
+* Generate `_version.py` from git tags using `build.py`
 
 These hooks run automatically on `git commit`. To bypass temporarily: `git commit --no-verify`
+
+### Releasing New Versions
+
+This project uses git tags for versioning, allowing users to install directly from GitHub without
+needing PyPI or CI/CD pipelines.
+
+#### Version Information
+
+* Version is dynamically generated from git tags
+* Format: `v0.1.0` (semantic versioning with `v` prefix)
+* The `build.py` script generates `_version.py` from git tags
+* Users can check version with `gstat --version`
+
+#### Creating a Release
+
+Use the release script to create a new version:
+
+```bash
+# Run the interactive release script
+./scripts/release.sh
+
+# The script will:
+# 1. Check for uncommitted changes
+# 2. Suggest the next version number
+# 3. Create a temporary tag
+# 4. Run build.py to generate version files
+# 5. Commit the version files
+# 6. Create an annotated tag on the version commit
+# 7. Optionally push to GitHub
+```
+
+#### Manual Release Process
+
+If you prefer to do it manually:
+
+```bash
+# 1. Create a temporary tag (for build.py to read)
+git tag v0.1.0
+
+# 2. Generate version files
+python3 build.py
+
+# 3. Commit the version files
+git add pyproject.toml src/gstat/_version.py
+git commit -m "chore: update version to 0.1.0"
+
+# 4. Move tag to the version commit
+git tag -d v0.1.0
+git tag -a v0.1.0 -m "Release 0.1.0"
+
+# 5. Push tag to GitHub
+git push origin v0.1.0
+```
+
+#### After Releasing
+
+Users can install the new version:
+
+```bash
+uv tool install git+https://github.com/dhis2/gatling-statistics@v0.1.0
+```
 
