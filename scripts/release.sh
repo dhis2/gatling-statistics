@@ -83,20 +83,34 @@ if git rev-parse "$tag" >/dev/null 2>&1; then
 fi
 
 # Show what will be tagged
-echo -e "\n${YELLOW}Creating tag:${NC} $tag"
-echo -e "${YELLOW}On commit:${NC} $(git rev-parse --short HEAD) - $(git log -1 --pretty=format:'%s')"
+echo -e "\n${YELLOW}Will create tag:${NC} $tag"
+echo -e "${YELLOW}Current commit:${NC} $(git rev-parse --short HEAD) - $(git log -1 --pretty=format:'%s')"
 echo -e "${YELLOW}Branch:${NC} $current_branch"
 
 # Confirm
-read -p "Create this tag? (y/N) " -n 1 -r
+read -p "Create this release? (y/N) " -n 1 -r
 echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     echo "Cancelled."
     exit 0
 fi
 
-# Create annotated tag
-echo -e "\n${GREEN}Creating annotated tag $tag...${NC}"
+# Create temporary lightweight tag so build.py can read it
+echo -e "\n${GREEN}Creating temporary tag for version generation...${NC}"
+git tag "$tag"
+
+# Generate version file with tag information
+echo -e "${GREEN}Generating version files...${NC}"
+python3 build.py
+
+# Commit the updated version files
+echo -e "${GREEN}Committing version files...${NC}"
+git add pyproject.toml src/gstat/_version.py
+git commit -m "chore: update version to $version"
+
+# Move the tag to the new commit (with annotation)
+echo -e "${GREEN}Moving tag to version commit...${NC}"
+git tag -d "$tag"
 git tag -a "$tag" -m "Release $version"
 
 echo -e "${GREEN}Tag created successfully!${NC}"
