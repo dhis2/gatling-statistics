@@ -9,6 +9,7 @@ each request.
 To run: uv run python test_trace_mapping.py
 """
 
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -90,6 +91,104 @@ class TestTraceMapping(unittest.TestCase):
                     visible_indices,
                     expected_range,
                     f"Trace indices for '{request_name}' are not contiguous: {visible_indices}",
+                )
+
+
+class TestNestedGroups(unittest.TestCase):
+    """Test that requests with identical names but different group hierarchies are kept separate."""
+
+    def test_duplicate_request_names_in_different_hierarchies(self):
+        """Verify requests with same name but different hierarchies produce separate statistics.
+
+        This test uses real TrackerTest data where "Get relationships for first event" appears in:
+        * "Get a list of single events|Get one single event" (2 times: 5ms, 4ms)
+        * "Get a list of TEs|Go to single enrollment|Get one event" (2 times: 3ms, 4ms)
+
+        Without hierarchy-aware grouping, these would incorrectly merge into 4 requests with
+        response times [5, 4, 3, 4] instead of staying separate.
+        """
+        # fmt: off
+        # ruff: noqa: E501
+        csv_content = """record_type,scenario_name,group_hierarchy,request_name,status,start_timestamp,end_timestamp,response_time_ms,error_message,event_type,duration_ms,cumulated_response_time_ms,is_incoming
+user,Single Events,,,,1762133595734,,,,start,,,
+request,,,Login,OK,1762133595750,1762133595858,108,,,,,false
+request,,Get a list of single events,Go to first page of program VBqh0ynB2wv,OK,1762133595875,1762133595934,59,,,,,false
+request,,"Get a list of single events|Get one single event",Get first event,OK,1762133596092,1762133596115,23,,,,,false
+request,,"Get a list of single events|Get one single event",Get relationships for first event,OK,1762133596116,1762133596121,5,,,,,false
+request,,"Get a list of single events|Get one single event",Get first event,OK,1762133596300,1762133596314,14,,,,,false
+request,,"Get a list of single events|Get one single event",Get relationships for first event,OK,1762133596315,1762133596319,4,,,,,false
+request,,Get a list of TEs,Get first page of TEs of program ur1Edk5Oe2n,OK,1762133614743,1762133614877,134,,,,,false
+request,,"Get a list of TEs|Go to single enrollment",Get first enrollment,OK,1762133614909,1762133614916,7,,,,,false
+request,,"Get a list of TEs|Go to single enrollment|Get one event",Get first event from enrollment,OK,1762133614925,1762133614938,13,,,,,false
+request,,"Get a list of TEs|Go to single enrollment|Get one event",Get relationships for first event,OK,1762133614938,1762133614941,3,,,,,false
+request,,"Get a list of TEs|Go to single enrollment|Get one event",Get first event from enrollment,OK,1762133615108,1762133615121,13,,,,,false
+request,,"Get a list of TEs|Go to single enrollment|Get one event",Get relationships for first event,OK,1762133615121,1762133615125,4,,,,,false
+user,Single Events,,,,1762133613933,,,,end,,,
+"""
+        # fmt: on
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_dir = Path(tmpdir) / "trackertest-20250101010101010-test"
+            test_dir.mkdir()
+            (test_dir / "simulation.csv").write_text(csv_content)
+
+            gatling_data = load_gatling_data(Path(tmpdir))
+
+            simulation = gatling_data.get_simulations()[0]
+            run = gatling_data.get_runs(simulation)[0]
+            actual_requests = gatling_data.get_requests(simulation, run)
+
+            # Map of full_request_path -> (count, response_times, mean)
+            expected_requests = {
+                # Request without group hierarchy (NaN) - tests dropna=False
+                "Login": (1, [108], 108.0),
+                # Requests with single-level hierarchy
+                "Get a list of single events|Go to first page of program VBqh0ynB2wv": (
+                    1,
+                    [59],
+                    59.0,
+                ),
+                "Get a list of TEs|Get first page of TEs of program ur1Edk5Oe2n": (1, [134], 134.0),
+                "Get a list of TEs|Go to single enrollment|Get first enrollment": (1, [7], 7.0),
+                # Requests with nested hierarchy - same request_name, different contexts
+                "Get a list of single events|Get one single event|Get first event": (
+                    2,
+                    [23, 14],
+                    18.5,
+                ),
+                "Get a list of single events|Get one single event|Get relationships for first event": (
+                    2,
+                    [5, 4],
+                    4.5,
+                ),
+                "Get a list of TEs|Go to single enrollment|Get one event|Get first event from enrollment": (
+                    2,
+                    [13, 13],
+                    13.0,
+                ),
+                "Get a list of TEs|Go to single enrollment|Get one event|Get relationships for first event": (
+                    2,
+                    [3, 4],
+                    3.5,
+                ),
+            }
+
+            # Verify exact set of requests (no missing, no extra)
+            self.assertEqual(set(actual_requests), set(expected_requests.keys()))
+
+            # Verify statistics for each request
+            for full_path, (
+                expected_count,
+                expected_times,
+                expected_mean,
+            ) in expected_requests.items():
+                data = gatling_data.get_request_data(simulation, run, full_path)
+                self.assertEqual(data.count, expected_count, f"Wrong count for {full_path}")
+                self.assertEqual(
+                    data.response_times, expected_times, f"Wrong times for {full_path}"
+                )
+                self.assertAlmostEqual(
+                    data.mean, expected_mean, places=2, msg=f"Wrong mean for {full_path}"
                 )
 
 

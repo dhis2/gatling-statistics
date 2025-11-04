@@ -562,7 +562,18 @@ def _load_single_directory(gatling_data: GatlingData, directory: Path, method: s
         raise FileNotFoundError(f"simulation.csv not found in {directory}")
 
     df = parse_simulation_csv(simulation_csv)
-    for request_name, group in df.groupby("request_name"):
+
+    # Group by both group_hierarchy and request_name to keep requests with the same name but
+    # different hierarchies separate
+    for (group_hierarchy, request_name), group in df.groupby(
+        ["group_hierarchy", "request_name"], dropna=False
+    ):
+        # Create the full path for display/storage
+        full_path = (
+            f"{group_hierarchy}|{request_name}"
+            if pd.notna(group_hierarchy) and group_hierarchy
+            else request_name
+        )
         response_times = group["response_time_ms"].tolist()
         timestamps = list(zip(group["start_timestamp"], group["end_timestamp"], strict=False))
         percentiles = calculate_percentiles(response_times, method)
@@ -578,7 +589,7 @@ def _load_single_directory(gatling_data: GatlingData, directory: Path, method: s
         )
 
         gatling_data.add_request_data(
-            simulation, run_timestamp, request_name, request_data, directory, suffix
+            simulation, run_timestamp, full_path, request_data, directory, suffix
         )
 
 
