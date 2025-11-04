@@ -1,3 +1,3 @@
 # Auto-generated during build
-__version__ = "0.0.0+12c8e3d"
-__git_sha__ = "12c8e3d"
+__version__ = "0.0.0+626bc2b"
+__git_sha__ = "626bc2b"

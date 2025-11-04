@@ -229,59 +229,25 @@ These hooks run automatically on `git commit`. To bypass temporarily: `git commi
 ### Releasing New Versions
 
 This project uses git tags for versioning, allowing users to install directly from GitHub without
-needing PyPI or CI/CD pipelines.
+needing PyPI or CI/CD pipelines. Version is dynamically generated from git tags in format `v0.1.0`
+and can be checked with `gstat --version`.
 
-#### Version Information
-
-* Version is dynamically generated from git tags
-* Format: `v0.1.0` (semantic versioning with `v` prefix)
-* The `build.py` script generates `_version.py` from git tags
-* Users can check version with `gstat --version`
-
-#### Creating a Release
-
-Use the release script to create a new version:
+To create a new release, run the interactive release script:
 
 ```bash
-# Run the interactive release script
 ./scripts/release.sh
-
-# The script will:
-# 1. Check for uncommitted changes
-# 2. Suggest the next version number
-# 3. Create a temporary tag
-# 4. Run build.py to generate version files
-# 5. Commit the version files
-# 6. Create an annotated tag on the version commit
-# 7. Optionally push to GitHub
 ```
 
-#### Manual Release Process
+The script will:
 
-If you prefer to do it manually:
+1. Check for uncommitted changes
+2. Suggest the next version number (or you can specify your own)
+3. Generate version files from the tag
+4. Commit the version files
+5. Create an annotated tag
+6. Optionally push to GitHub
 
-```bash
-# 1. Create a temporary tag (for build.py to read)
-git tag v0.1.0
-
-# 2. Generate version files
-python3 build.py
-
-# 3. Commit the version files
-git add pyproject.toml src/gstat/_version.py
-git commit -m "chore: update version to 0.1.0"
-
-# 4. Move tag to the version commit
-git tag -d v0.1.0
-git tag -a v0.1.0 -m "Release 0.1.0"
-
-# 5. Push tag to GitHub
-git push origin v0.1.0
-```
-
-#### After Releasing
-
-Users can install the new version:
+After releasing, users can install the new version:
 
 ```bash
 uv tool install git+https://github.com/dhis2/gatling-statistics@v0.1.0
