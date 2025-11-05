@@ -1366,61 +1366,410 @@ def format_output(gatling_data: GatlingData) -> None:
                     )
 
 
-def show_plot_with_clipboard(
-    fig: go.Figure, report_directory: Path = None, output_file: str = None
-):
-    """Show plot with clipboard functionality for both interactive and HTML output modes."""
-    click_js = ""
+def generate_search_controls_js(fig: go.Figure) -> str:
+    """Generate HTML and JavaScript for searchable dropdown controls.
+
+    Adds search inputs to the right of Request and Timestamp dropdowns.
+    Returns HTML+CSS+JS string to inject via post_script.
+    """
+    if not hasattr(fig, "layout") or not hasattr(fig.layout, "updatemenus"):
+        return ""
+
+    updatemenus = fig.layout.updatemenus
+    if not updatemenus:
+        return ""
+
+    # Identify which dropdowns exist based on y-position
+    # simulation: y=1.25, request: y=1.2, timestamp: y=1.15
+    dropdown_configs = []
+
+    for idx, menu in enumerate(updatemenus):
+        # Access y attribute from Plotly object
+        menu_y = menu.y if hasattr(menu, "y") and menu.y is not None else 0
+
+        # Request dropdown (y=1.2)
+        if abs(menu_y - 1.2) < 0.01:
+            dropdown_configs.append(
+                {
+                    "index": idx,
+                    "id": "requestSearch",
+                    "placeholder": "🔍 Search requests...",
+                    "type": "request",
+                    "top_px": 85,  # Approximate pixel position
+                }
+            )
+        # Timestamp dropdown (y=1.15)
+        elif abs(menu_y - 1.15) < 0.01:
+            dropdown_configs.append(
+                {
+                    "index": idx,
+                    "id": "timestampSearch",
+                    "placeholder": "🔍 Search runs...",
+                    "type": "timestamp",
+                    "top_px": 115,  # Approximate pixel position
+                }
+            )
+
+    if not dropdown_configs:
+        return ""
+
+    # Generate HTML for search inputs
+    html_parts = [
+        '<div id="searchControls" style="position: absolute; left: 240px; top: 50px; z-index: 1000;">'  # noqa: E501
+    ]
+
+    for config in dropdown_configs:
+        html_parts.append(f'''
+    <input type="text"
+           id="{config["id"]}"
+           placeholder="{config["placeholder"]}"
+           autocomplete="off"
+           style="display: block;
+                  margin-bottom: 10px;
+                  padding: 6px 12px;
+                  width: 280px;
+                  font-size: 12px;
+                  border: 1px solid #555;
+                  border-radius: 3px;
+                  background-color: #2a2a2a;
+                  color: #e0e0e0;
+                  font-family: Arial, sans-serif;">''')
+
+    html_parts.append("</div>")
+
+    # Generate JavaScript for filtering
+    js_parts = [
+        """
+    document.addEventListener('DOMContentLoaded', function() {
+        var plotlyDiv = document.getElementsByClassName('plotly-graph-div')[0];
+        if (!plotlyDiv || !plotlyDiv.layout || !plotlyDiv.layout.updatemenus) {
+            return;
+        }
+
+        // Store original buttons for each dropdown
+        var originalButtons = {};
+"""
+    ]
+
+    for config in dropdown_configs:
+        js_parts.append(f"""
+        // Store original buttons for {config["type"]} dropdown
+        if (plotlyDiv.layout.updatemenus[{config["index"]}]) {{
+            var btns = plotlyDiv.layout.updatemenus[{config["index"]}].buttons.slice();
+            originalButtons['{config["id"]}'] = btns;
+        }}
+""")
+
+    for config in dropdown_configs:
+        js_parts.append(f"""
+        // Search handler for {config["type"]} dropdown
+        var {config["id"]}Input = document.getElementById('{config["id"]}');
+        if ({config["id"]}Input && originalButtons['{config["id"]}']) {{
+            {config["id"]}Input.addEventListener('input', function() {{
+                var query = this.value.toLowerCase().trim();
+                var buttons = originalButtons['{config["id"]}'];
+
+                if (!query) {{
+                    // Reset to all items
+                    Plotly.relayout(plotlyDiv, {{
+                        'updatemenus[{config["index"]}].buttons': buttons
+                    }});
+                    return;
+                }}
+
+                // Filter buttons
+                var filtered = buttons.filter(function(btn) {{
+                    return btn.label.toLowerCase().indexOf(query) !== -1;
+                }});
+
+                if (filtered.length > 0) {{
+                    Plotly.relayout(plotlyDiv, {{
+                        'updatemenus[{config["index"]}].buttons': filtered
+                    }});
+                }}
+            }});
+
+            // Focus styling
+            {config["id"]}Input.addEventListener('focus', function() {{
+                this.style.borderColor = '#4a9eff';
+            }});
+            {config["id"]}Input.addEventListener('blur', function() {{
+                this.style.borderColor = '#555';
+            }});
+        }}
+""")
+
+    js_parts.append("""
+    });
+""")
+
+    # Don't include <script> tags - Plotly's post_script inserts inside existing script block
+    return "\n".join(html_parts) + "\n" + "\n".join(js_parts)
+
+
+def generate_search_and_clipboard_js(fig: go.Figure, report_directory: Path = None) -> str:
+    """Generate combined HTML and JavaScript for search controls and clipboard functionality.
+
+    Combines both features into a single script block to avoid multiple DOMContentLoaded handlers.
+    """
+    if not hasattr(fig, "layout") or not hasattr(fig.layout, "updatemenus"):
+        # No dropdowns, just add clipboard if needed
+        if report_directory:
+            return generate_clipboard_only_js()
+        return ""
+
+    updatemenus = fig.layout.updatemenus
+    if not updatemenus:
+        if report_directory:
+            return generate_clipboard_only_js()
+        return ""
+
+    # Identify which dropdowns exist
+    dropdown_configs = []
+    for idx, menu in enumerate(updatemenus):
+        menu_y = menu.y if hasattr(menu, "y") and menu.y is not None else 0
+
+        if abs(menu_y - 1.2) < 0.01:  # Request dropdown
+            dropdown_configs.append(
+                {
+                    "index": idx,
+                    "id": "requestSearch",
+                    "placeholder": "🔍 Search requests...",
+                    "type": "request",
+                }
+            )
+        elif abs(menu_y - 1.15) < 0.01:  # Timestamp dropdown
+            dropdown_configs.append(
+                {
+                    "index": idx,
+                    "id": "timestampSearch",
+                    "placeholder": "🔍 Search runs...",
+                    "type": "timestamp",
+                }
+            )
+
+    if not dropdown_configs and not report_directory:
+        return ""
+
+    # Generate HTML for search inputs - each positioned individually
+    html_parts = []
+    if dropdown_configs:
+        for config in dropdown_configs:
+            # Calculate top position based on dropdown y-position
+            # Plotly dropdowns are at y=1.25 (sim), y=1.2 (req), y=1.15 (ts)
+            # These correspond roughly to: 35px, 60px, 85px from top
+            top_offset = 35  # Base offset
+            if config["type"] == "request":
+                top_offset = 60
+            elif config["type"] == "timestamp":
+                top_offset = 85
+
+            html_parts.append(
+                f'<input type="text" id="{config["id"]}" placeholder="{config["placeholder"]}" autocomplete="off" style="position: fixed; left: 230px; top: {top_offset}px; padding: 4px 8px; width: 280px; height: 26px; font-size: 11px; border: 1px solid #555; border-radius: 3px; background-color: #2a2a2a; color: #e0e0e0; font-family: Arial, sans-serif; box-sizing: border-box; z-index: 1000;" />'  # noqa: E501
+            )
+
+    # Generate JavaScript in a single DOMContentLoaded block
+    js_parts = [
+        """
+    document.addEventListener('DOMContentLoaded', function() {
+        var plotlyDiv = document.getElementsByClassName('plotly-graph-div')[0];
+        if (!plotlyDiv) {
+            return;
+        }
+"""
+    ]
+
+    # Add search functionality if dropdowns exist
+    if dropdown_configs:
+        js_parts.append("""
+        // Search functionality for dropdowns
+        if (plotlyDiv.layout && plotlyDiv.layout.updatemenus) {
+            var originalButtons = {};
+""")
+
+        for config in dropdown_configs:
+            js_parts.append(f"""
+            if (plotlyDiv.layout.updatemenus[{config["index"]}]) {{
+                var btns = plotlyDiv.layout.updatemenus[{config["index"]}].buttons.slice();
+                originalButtons['{config["id"]}'] = btns;
+            }}
+""")
+
+        for config in dropdown_configs:
+            js_parts.append(f"""
+            var {config["id"]}Input = document.getElementById('{config["id"]}');
+            if ({config["id"]}Input && originalButtons['{config["id"]}']) {{
+                {config["id"]}Input.addEventListener('input', function() {{
+                    var query = this.value.toLowerCase().trim();
+                    var buttons = originalButtons['{config["id"]}'];
+
+                    if (!query) {{
+                        var key = 'updatemenus[{config["index"]}].buttons';
+                        Plotly.relayout(plotlyDiv, {{[key]: buttons}});
+                        return;
+                    }}
+
+                    var filtered = buttons.filter(function(btn) {{
+                        return btn.label.toLowerCase().indexOf(query) !== -1;
+                    }});
+
+                    if (filtered.length > 0) {{
+                        var key = 'updatemenus[{config["index"]}].buttons';
+                        Plotly.relayout(plotlyDiv, {{[key]: filtered}});
+                    }}
+                }});
+
+                {config["id"]}Input.addEventListener('focus', function() {{
+                    this.style.borderColor = '#4a9eff';
+                }});
+                {config["id"]}Input.addEventListener('blur', function() {{
+                    this.style.borderColor = '#555';
+                }});
+            }}
+""")
+
+        js_parts.append("        }")
+
+    # Add clipboard functionality if report_directory is provided
     if report_directory:
-        click_js = """
-        document.addEventListener('DOMContentLoaded', function() {
-            var plotlyDiv = document.getElementsByClassName('plotly-graph-div')[0];
-            if (plotlyDiv) {
-                plotlyDiv.on('plotly_click', function(data) {
-                    if (data.points.length > 0) {
-                        var point = data.points[0];
-                        var dirPath = point.customdata[3] || point.customdata[1] ||
-                            point.customdata[0];
-                        navigator.clipboard.writeText(dirPath).then(function() {
-                            console.log('Run directory path copied: ' + dirPath);
-                            // Show temporary notification
-                            var notification = document.createElement('div');
-                            notification.innerHTML = 'Directory path copied to clipboard!';
-                            notification.style.cssText =
-                                'position: fixed; top: 20px; right: 20px; ' +
-                                'background: #4CAF50; color: white; padding: 10px; ' +
-                                'border-radius: 5px; z-index: 1000; ' +
-                                'font-family: Arial; font-size: 14px;';
-                            document.body.appendChild(notification);
-                            setTimeout(function() {
-                                if (document.body.contains(notification)) {
-                                    document.body.removeChild(notification);
-                                }
-                            }, 2000);
-                        }).catch(function(err) {
-                            console.error('Failed to copy directory path: ', err);
-                        });
-                    }
+        js_parts.append("""
+        // Clipboard functionality
+        plotlyDiv.on('plotly_click', function(data) {
+            if (data.points.length > 0) {
+                var point = data.points[0];
+                var dirPath = point.customdata[3] || point.customdata[1] || point.customdata[0];
+                navigator.clipboard.writeText(dirPath).then(function() {
+                    console.log('Run directory path copied: ' + dirPath);
+                    var notification = document.createElement('div');
+                    notification.innerHTML = 'Directory path copied to clipboard!';
+                    notification.style.cssText =
+                        'position: fixed; top: 20px; right: 20px; ' +
+                        'background: #4CAF50; color: white; padding: 10px; ' +
+                        'border-radius: 5px; z-index: 1000; ' +
+                        'font-family: Arial; font-size: 14px;';
+                    document.body.appendChild(notification);
+                    setTimeout(function() {
+                        if (document.body.contains(notification)) {
+                            document.body.removeChild(notification);
+                        }
+                    }, 2000);
+                }).catch(function(err) {
+                    console.error('Failed to copy directory path: ', err);
                 });
             }
         });
-        """
+""")
+
+    js_parts.append("""
+    });
+""")
+
+    # Don't include <script> tags - Plotly's post_script inserts inside existing script block
+    return "\n".join(html_parts) + "\n" + "\n".join(js_parts)
+
+
+def generate_clipboard_only_js() -> str:
+    """Generate JavaScript for clipboard-only functionality (no search)."""
+    return """
+    document.addEventListener('DOMContentLoaded', function() {
+        var plotlyDiv = document.getElementsByClassName('plotly-graph-div')[0];
+        if (plotlyDiv) {
+            plotlyDiv.on('plotly_click', function(data) {
+                if (data.points.length > 0) {
+                    var point = data.points[0];
+                    var dirPath = point.customdata[3] || point.customdata[1] || point.customdata[0];
+                    navigator.clipboard.writeText(dirPath).then(function() {
+                        console.log('Run directory path copied: ' + dirPath);
+                        var notification = document.createElement('div');
+                        notification.innerHTML = 'Directory path copied to clipboard!';
+                        notification.style.cssText =
+                            'position: fixed; top: 20px; right: 20px; ' +
+                            'background: #4CAF50; color: white; padding: 10px; ' +
+                            'border-radius: 5px; z-index: 1000; ' +
+                            'font-family: Arial; font-size: 14px;';
+                        document.body.appendChild(notification);
+                        setTimeout(function() {
+                            if (document.body.contains(notification)) {
+                                document.body.removeChild(notification);
+                            }
+                        }, 2000);
+                    }).catch(function(err) {
+                        console.error('Failed to copy directory path: ', err);
+                    });
+                }
+            });
+        }
+    });
+"""
+
+
+def show_plot_with_clipboard(
+    fig: go.Figure, report_directory: Path = None, output_file: str = None
+):
+    """Show plot with clipboard functionality and searchable dropdowns for interactive and HTML output modes."""  # noqa: E501
+    # Generate search HTML and combined JS
+    full_content = generate_search_and_clipboard_js(fig, report_directory)
+
+    # Separate HTML and JS
+    html_part = ""
+    js_part = ""
+
+    if full_content:
+        # Split HTML and JS parts
+        if "<input" in full_content:
+            full_content.split("\n", 1)
+            for _i, part in enumerate(full_content.split("\n")):
+                if part.strip().startswith("document.addEventListener"):
+                    # Everything before this is HTML, everything after is JS
+                    html_lines = []
+                    js_lines = []
+                    in_js = False
+                    for line in full_content.split("\n"):
+                        if "document.addEventListener" in line:
+                            in_js = True
+                        if in_js:
+                            js_lines.append(line)
+                        else:
+                            html_lines.append(line)
+                    html_part = "\n".join(html_lines)
+                    js_part = "\n".join(js_lines)
+                    break
+        else:
+            # No HTML, just JS
+            js_part = full_content
 
     if output_file:
-        fig.write_html(output_file, post_script=click_js if click_js else None)
+        # Write HTML with JS
+        fig.write_html(output_file, post_script=js_part if js_part else None)
+
+        # If we have HTML to inject, modify the file
+        if html_part:
+            with open(output_file) as f:
+                content = f.read()
+            # Inject HTML before </body>
+            content = content.replace("</body>", f"{html_part}\n</body>")
+            with open(output_file, "w") as f:
+                f.write(content)
+
         print(f"Plot saved to {output_file}")
     else:
-        # For interactive mode, create a temporary HTML file with JavaScript
-        if click_js:
-            import tempfile
-            import webbrowser
+        # For interactive mode, create a temporary HTML file
+        import tempfile
+        import webbrowser
 
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False) as tmp:
-                fig.write_html(tmp.name, post_script=click_js)
-                webbrowser.open(f"file://{tmp.name}")
-                print(f"Interactive plot opened in browser: {tmp.name}")
-        else:
-            fig.show()
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False) as tmp:
+            fig.write_html(tmp.name, post_script=js_part if js_part else None)
+
+            # Inject HTML if needed
+            if html_part:
+                with open(tmp.name) as f:
+                    content = f.read()
+                content = content.replace("</body>", f"{html_part}\n</body>")
+                with open(tmp.name, "w") as f:
+                    f.write(content)
+
+            webbrowser.open(f"file://{tmp.name}")
+            print(f"Interactive plot opened in browser: {tmp.name}")
 
 
 def main():
