@@ -222,17 +222,18 @@ This project uses pre-commit hooks to ensure code quality. The hooks automatical
 
 * Format code using `ruff format`
 * Fix linting issues using `ruff check --fix`
-* Generate `_version.py` from git tags using `build.py`
 
 These hooks run automatically on `git commit`. To bypass temporarily: `git commit --no-verify`
 
 ### Releasing New Versions
 
-This project uses git tags for versioning, allowing users to install directly from GitHub without
-needing PyPI or CI/CD pipelines. Version is dynamically generated from git tags in format `v0.1.0`
-and can be checked with `gstat --version`.
+This project uses setuptools-scm for dynamic versioning from git tags. Version is automatically
+generated at build/install time from git tags in format `v0.1.0` and can be checked with `gstat
+--version`.
 
-To create a new release, run the interactive release script:
+#### Creating a Release
+
+Use the interactive release script:
 
 ```bash
 ./scripts/release.sh
@@ -242,14 +243,16 @@ The script will:
 
 1. Check for uncommitted changes
 2. Suggest the next version number (or you can specify your own)
-3. Generate version files from the tag
-4. Commit the version files
-5. Create an annotated tag
-6. Optionally push to GitHub
+3. Validate the version format
+4. Create an annotated git tag
+5. Push the tag to GitHub (required for users to install the release)
 
-After releasing, users can install the new version:
+#### How Versioning Works
 
-```bash
-uv tool install git+https://github.com/dhis2/gatling-statistics@v0.1.0
-```
+* **On a tagged commit**: `gstat --version` shows `0.2.0` (clean release version)
+* **After commits**: `gstat --version` shows `0.2.1.dev1+g20bb26c` (development version with SHA)
+* **With uncommitted changes**: Version includes `.dirty` suffix
+
+setuptools-scm automatically generates the version at build time, so no version files need to be
+committed to the repository.
 

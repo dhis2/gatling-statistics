@@ -23,6 +23,9 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# Generated version file (created by setuptools-scm)
+src/gstat/_version.py
+
 # Virtual environments
 .env
 .venv

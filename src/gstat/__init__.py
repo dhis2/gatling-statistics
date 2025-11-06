@@ -21,9 +21,15 @@ from plotly.subplots import make_subplots
 from tdigest import TDigest
 
 try:
-    from ._version import __git_sha__, __version__
+    from ._version import __version__, commit_id
+
+    # setuptools-scm provides commit_id in format 'gSHA' or None
+    if commit_id:
+        __git_sha__ = commit_id.lstrip("g")
+    else:
+        __git_sha__ = "release"
 except ImportError:
-    __version__ = "0.1.0"
+    __version__ = "0.0.0+dev"
     __git_sha__ = "dev"
 
 percentile_range_colors = {

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Release script for creating git tags with semantic versioning
 
 set -e
@@ -95,22 +95,8 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 0
 fi
 
-# Create temporary lightweight tag so build.py can read it
-echo -e "\n${GREEN}Creating temporary tag for version generation...${NC}"
-git tag "$tag"
-
-# Generate version file with tag information
-echo -e "${GREEN}Generating version files...${NC}"
-python3 build.py
-
-# Commit the updated version files
-echo -e "${GREEN}Committing version files...${NC}"
-git add pyproject.toml src/gstat/_version.py
-git commit -m "chore: update version to $version"
-
-# Move the tag to the new commit (with annotation)
-echo -e "${GREEN}Moving tag to version commit...${NC}"
-git tag -d "$tag"
+# Create annotated tag on current commit
+echo -e "\n${GREEN}Creating annotated tag...${NC}"
 git tag -a "$tag" -m "Release $version"
 
 echo -e "${GREEN}Tag created successfully!${NC}"
