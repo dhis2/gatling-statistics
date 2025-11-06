@@ -1432,24 +1432,46 @@ def _main():
         description="Calculate percentiles from Gatling simulation.csv files",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
-  # Single report directory
-  gstat --plot distribution ./samples/trackerexportertests-20250627064559771
+Plot Types:
+  distribution   Histogram showing the full distribution of response times with percentile lines.
+                 Good for: Understanding the shape of your distribution, identifying clusters
+                 and outliers, seeing which response times are most common.
 
-  # Multiple report directories
+  stacked        Stacked bar chart showing differences between percentiles (0th, 50th, 75th,
+                 95th, 99th, 100th) across multiple runs.
+                 Good for: Comparing performance across runs, spotting regressions, identifying
+                 tail latency trends, visualizing consistency (taller = more variable).
+                 Note: Boxes disappear when percentiles have identical values.
+
+  scatter        Scatter plot of individual response times over the duration of a run.
+                 Good for: Identifying patterns over time, spotting warmup periods, detecting
+                 gradual degradation, finding sudden spikes or drops in performance.
+
+  scatter-all    Overlay scatter plot showing all runs on the same chart, color-coded by run.
+                 Good for: Comparing patterns across multiple runs, spotting systematic
+                 differences, identifying which runs had outliers or different behavior.
+
+  timeline       Horizontal bar chart showing when each request started and how long it took.
+                 Good for: Understanding request concurrency, visualizing load patterns, seeing
+                 gaps between requests, analyzing request scheduling and overlap.
+
+Examples:
+  # Output CSV statistics
   gstat ./samples/
 
-  # With distribution plotting (default)
-  gstat --plot ./samples/
+  # Single report directory with plot
+  gstat --plot distribution ./samples/trackerexportertests-20250627064559771
+
+  # Multiple report directories with distribution plot
   gstat --plot distribution ./samples/
 
-  # With stacked percentile bar chart
+  # Stacked percentile bar chart
   gstat --plot stacked ./samples/
 
-  # With scatter plot of response times over time
+  # Scatter plot of response times over time
   gstat --plot scatter ./samples/
 
-  # With timeline plot showing request duration bars
+  # Timeline plot showing request duration bars
   gstat --plot timeline ./samples/
 
   # Exclude directories containing a specific string
@@ -1464,10 +1486,8 @@ Examples:
     )
     parser.add_argument(
         "--plot",
-        nargs="?",
-        const="distribution",
         choices=["distribution", "stacked", "scatter", "scatter-all", "timeline"],
-        help="Generate interactive plot instead of CSV output (default: distribution)",
+        help="Generate interactive plot instead of CSV output",
     )
     parser.add_argument(
         "--output", "-o", type=Path, help="Output file for plot (default: show in browser)"
