@@ -62,6 +62,7 @@ dropdown_configs = {
     "distribution": ["simulation", "request", "timestamp"],
     "scatter": ["simulation", "request", "timestamp"],
     "timeline": ["simulation", "request", "timestamp"],
+    "ecdf": ["simulation", "request", "timestamp"],
 }
 
 # dark mode makes the active selection illegible
@@ -416,11 +417,7 @@ def _get_simulation_visibility(
                 first_request = sim_requests[0]
                 key = (simulation, first_run, first_request)
                 if key in trace_mapping:
-                    if (
-                        plot_type == "distribution"
-                        or plot_type == "scatter"
-                        or plot_type == "timeline"
-                    ):
+                    if plot_type in ("distribution", "scatter", "timeline", "ecdf"):
                         start_idx, end_idx = trace_mapping[key]
                         for j in range(start_idx, end_idx):
                             if j < len(visibility):
@@ -451,7 +448,7 @@ def _get_request_visibility(
         # Distribution/scatter
         key = (defaults["simulation"], defaults["run"], request)
         if key in trace_mapping:
-            if plot_type == "distribution" or plot_type == "scatter" or plot_type == "timeline":
+            if plot_type in ("distribution", "scatter", "timeline", "ecdf"):
                 start_idx, end_idx = trace_mapping[key]
                 for j in range(start_idx, end_idx):
                     if j < len(visibility):
@@ -473,7 +470,7 @@ def _get_run_visibility(
 
     key = (defaults["simulation"], run, defaults["request"])
     if key in trace_mapping:
-        if plot_type == "distribution" or plot_type == "scatter" or plot_type == "timeline":
+        if plot_type in ("distribution", "scatter", "timeline", "ecdf"):
             start_idx, end_idx = trace_mapping[key]
             for j in range(start_idx, end_idx):
                 if j < len(visibility):
@@ -1300,6 +1297,198 @@ def plot_timeline(gatling_data: GatlingData) -> go.Figure:
     return fig
 
 
+def plot_ecdf(gatling_data: GatlingData) -> go.Figure:
+    """Plot empirical cumulative distribution function of response times.
+
+    ECDF shows the fraction of requests with response time <= x, making it easy to read off
+    any percentile directly from the graph. Unlike histograms, ECDFs don't lose data to bucketing
+    and maintain their shape when zooming.
+
+    See: https://brooker.co.za/blog/2022/09/02/ecdf.html
+    """
+    fig = go.Figure()
+
+    if not gatling_data.data:
+        return fig
+
+    simulations = gatling_data.get_simulations()
+
+    default_simulation = simulations[0] if simulations else None
+    default_run = None
+    default_request = None
+
+    if default_simulation:
+        runs = gatling_data.get_runs(default_simulation)
+        default_run = runs[0] if runs else None
+
+        if default_run:
+            requests = gatling_data.get_requests(default_simulation, default_run)
+            default_request = requests[0] if requests else None
+
+    if not default_simulation or not default_run or not default_request:
+        return fig
+
+    trace_mapping = {}
+    trace_idx = 0
+
+    for simulation in simulations:
+        for run_timestamp in gatling_data.get_runs(simulation):
+            for request_name in gatling_data.get_requests(simulation, run_timestamp):
+                request_data = gatling_data.get_request_data(
+                    simulation, run_timestamp, request_name
+                )
+
+                if not request_data or not request_data.response_times:
+                    continue
+
+                response_times = sorted(request_data.response_times)
+                n = len(response_times)
+                # ECDF: y[i] = (i + 1) / n for each sorted observation
+                ecdf_y = [(i + 1) / n for i in range(n)]
+
+                percentiles = request_data.percentiles
+
+                is_default = (
+                    simulation == default_simulation
+                    and run_timestamp == default_run
+                    and request_name == default_request
+                )
+
+                run_data = gatling_data.get_run_data(simulation, run_timestamp)
+                run_directory = str(run_data.directory.absolute())
+
+                # ECDF line trace
+                fig.add_trace(
+                    go.Scatter(
+                        x=response_times,
+                        y=ecdf_y,
+                        mode="lines",
+                        line=dict(color="lightblue", width=2),
+                        name=f"{request_name}",
+                        visible=is_default,
+                        hovertemplate="<b>%{x:.0f}ms</b><br>"
+                        + "Cumulative: %{y:.4f}<br>"
+                        + "Click to copy run directory path<br>"
+                        + "<extra></extra>",
+                        customdata=[[run_directory]] * n,
+                        showlegend=False,
+                    )
+                )
+
+                start_trace_idx = trace_idx
+                trace_idx += 1
+
+                # Percentile markers as horizontal dashed lines
+                for percentile_name, color in percentile_line_colors.items():
+                    if percentile_name in percentiles:
+                        percentile_value = percentiles[percentile_name]
+                        # Map percentile name to cumulative probability
+                        percentile_y_map = {
+                            "50th": 0.50,
+                            "75th": 0.75,
+                            "95th": 0.95,
+                            "99th": 0.99,
+                            "max": 1.0,
+                        }
+                        y_val = percentile_y_map.get(percentile_name)
+                        if y_val is None:
+                            continue
+
+                        # Horizontal line from 0 to the percentile value at the y level
+                        fig.add_trace(
+                            go.Scatter(
+                                x=[0, percentile_value],
+                                y=[y_val, y_val],
+                                mode="lines",
+                                line=dict(color=color, width=line_width, dash="dash"),
+                                name=f"{percentile_name}: {percentile_value:.0f}ms",
+                                visible=is_default,
+                                hovertemplate=f"<b>{percentile_name} Percentile</b><br>"
+                                + f"{percentile_value:.0f}ms<br>"
+                                + "<extra></extra>",
+                                showlegend=False,
+                            )
+                        )
+                        trace_idx += 1
+
+                        # Vertical line from the x-axis up to the percentile y level
+                        fig.add_trace(
+                            go.Scatter(
+                                x=[percentile_value, percentile_value],
+                                y=[0, y_val],
+                                mode="lines",
+                                line=dict(color=color, width=line_width, dash="dash"),
+                                name=f"{percentile_name}: {percentile_value:.0f}ms",
+                                visible=is_default,
+                                hoverinfo="skip",
+                                showlegend=False,
+                            )
+                        )
+                        trace_idx += 1
+
+                # Mean vertical line
+                mean_value = request_data.mean
+                fig.add_trace(
+                    go.Scatter(
+                        x=[mean_value, mean_value],
+                        y=[0, 1],
+                        mode="lines",
+                        line=dict(color=mean_color, width=line_width, dash="solid"),
+                        name=f"Mean: {mean_value:.0f}ms",
+                        visible=is_default,
+                        hovertemplate="<b>Mean</b><br>"
+                        + f"{mean_value:.0f}ms<br>"
+                        + "<extra></extra>",
+                        showlegend=False,
+                    )
+                )
+                trace_idx += 1
+
+                trace_mapping[(simulation, run_timestamp, request_name)] = (
+                    start_trace_idx,
+                    trace_idx,
+                )
+
+    defaults = {
+        "simulation": default_simulation,
+        "run": default_run,
+        "request": default_request,
+    }
+    updatemenus = create_plot_dropdowns(
+        "ecdf", gatling_data, trace_mapping, len(fig.data), defaults
+    )
+
+    xaxis_title = "Response Time (ms)"
+    if gatling_data.report_directory:
+        xaxis_title = f"Response Time (ms) of {gatling_data.report_directory.name}"
+
+    fig.update_layout(
+        xaxis_title=xaxis_title,
+        yaxis_title="Cumulative Probability",
+        template="plotly_dark",
+        showlegend=False,
+        font=dict(size=14),
+        xaxis=dict(
+            title=dict(font=dict(size=16)),
+            showticklabels=True,
+            tickfont=dict(size=12),
+            ticks="outside",
+            ticklen=5,
+            tickwidth=1,
+            tickcolor="white",
+        ),
+        yaxis=dict(
+            title=dict(font=dict(size=16)),
+            range=[0, 1.02],
+            tickformat=".0%",
+            dtick=0.1,
+        ),
+        updatemenus=updatemenus,
+    )
+
+    return fig
+
+
 def plot_scatter_all(gatling_data: GatlingData) -> go.Figure:
     """Plot response times for all runs, each run with different color."""
 
@@ -1848,6 +2037,12 @@ Plot Types:
                  Good for: Understanding request concurrency, visualizing load patterns, seeing
                  gaps between requests, analyzing request scheduling and overlap.
 
+  ecdf           Empirical Cumulative Distribution Function plot showing the fraction of requests
+                 with response time <= x. Percentiles can be read directly off the graph.
+                 Good for: Reading off any percentile visually, comparing distributions without
+                 bucketing artifacts, zooming into tails without losing shape.
+                 See: https://brooker.co.za/blog/2022/09/02/ecdf.html
+
 Examples:
   # Output CSV statistics
   gstat ./samples/
@@ -1867,6 +2062,9 @@ Examples:
   # Timeline plot showing request duration bars
   gstat --plot timeline ./samples/
 
+  # ECDF plot of response times
+  gstat --plot ecdf ./samples/
+
   # Exclude directories containing a specific string
   gstat --exclude warmup ./samples/
   gstat --plot stacked --exclude warmup ./samples/
@@ -1882,7 +2080,7 @@ Examples:
     )
     parser.add_argument(
         "--plot",
-        choices=["distribution", "stacked", "scatter", "scatter-all", "timeline"],
+        choices=["distribution", "stacked", "scatter", "scatter-all", "timeline", "ecdf"],
         help="Generate interactive plot instead of CSV output",
     )
     parser.add_argument(
@@ -1929,6 +2127,8 @@ Examples:
                 fig = plot_scatter_all(gatling_data)
             case "timeline":
                 fig = plot_timeline(gatling_data)
+            case "ecdf":
+                fig = plot_ecdf(gatling_data)
             case _:
                 fig = plot_percentiles(gatling_data)
 
