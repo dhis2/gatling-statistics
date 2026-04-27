@@ -416,7 +416,11 @@ def _get_simulation_visibility(
                 first_request = sim_requests[0]
                 key = (simulation, first_run, first_request)
                 if key in trace_mapping:
-                    if plot_type == "distribution" or plot_type == "scatter":
+                    if (
+                        plot_type == "distribution"
+                        or plot_type == "scatter"
+                        or plot_type == "timeline"
+                    ):
                         start_idx, end_idx = trace_mapping[key]
                         for j in range(start_idx, end_idx):
                             if j < len(visibility):
