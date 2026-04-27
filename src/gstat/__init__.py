@@ -168,7 +168,7 @@ class RequestData(NamedTuple):
 class RunData:
     """Data for a complete simulation run."""
 
-    def __init__(self, raw_timestamp: str, directory: Path = None, suffix: str = ""):
+    def __init__(self, raw_timestamp: str, directory: Path, suffix: str = ""):
         self.raw_timestamp = raw_timestamp
         self.formatted_timestamp = format_timestamp(raw_timestamp)
         self.datetime_timestamp = parse_gatling_directory_timestamp(raw_timestamp)
@@ -194,7 +194,7 @@ class GatlingData:
         run_timestamp: str,
         request_name: str,
         request_data: RequestData,
-        directory: Path = None,
+        directory: Path,
         suffix: str = "",
     ) -> None:
         """Add request data maintaining sorted order."""
@@ -569,14 +569,19 @@ def _load_single_directory(gatling_data: GatlingData, directory: Path, method: s
 
     df = parse_simulation_csv(simulation_csv)
 
-    # Group by both group_hierarchy and request_name to keep requests with the same name but
-    # different hierarchies separate
-    for (group_hierarchy, request_name), group in df.groupby(
-        ["group_hierarchy", "request_name"], dropna=False
-    ):
-        # Create the full path for display/storage
+    # Group by (group_hierarchy, request_name) so requests with the same name
+    # in different hierarchies stay separate. Sorted so requests cluster by
+    # group (nested groups nest lexicographically) — matches the layout of
+    # Gatling's HTML report and stays stable regardless of concurrency.
+    # Fill NaN with "" so top-level (groupless) requests sort first rather
+    # than last (pandas treats NaN as greater than any string under sort).
+    df = df.copy()
+    df["group_hierarchy"] = df["group_hierarchy"].fillna("")
+    for (group_hierarchy, request_name), group in df.groupby(["group_hierarchy", "request_name"]):
+        # Compose the display path using Gatling's HTML separator (" / "), with
+        # the inner "|" from glog's CSV (nested groups) swapped to " / " as well.
         full_path = (
-            f"{group_hierarchy}|{request_name}"
+            f"{group_hierarchy.replace('|', ' / ')} / {request_name}"
             if pd.notna(group_hierarchy) and group_hierarchy
             else request_name
         )
@@ -1343,6 +1348,135 @@ def plot_scatter_all(gatling_data: GatlingData) -> go.Figure:
     return fig
 
 
+class CompareInput(NamedTuple):
+    """One run participating in a comparison."""
+
+    path: Path
+    label: str
+    percentiles: dict[str, dict[str, float]]  # {request_name: {percentile_key: value}}
+
+
+def collect_compare_input(
+    path: Path, label: str | None, method: str, exclude: str | None
+) -> CompareInput:
+    """Load one run and collapse it to {request_name: percentiles}.
+
+    A run is a single Gatling report dir or a dir of them. If multiple report dirs
+    remain after `exclude`, requests with the same name are merged by averaging response
+    times across reports (count-weighted is unnecessary since the typical case after
+    `--exclude warmup` is one report dir).
+    """
+    gatling_data = load_gatling_data(path, method, exclude)
+
+    # Flatten across simulation/run, keyed by request name. If a request appears in
+    # multiple report dirs (e.g. multiple warmups left in), recompute percentiles over
+    # the combined response times so the result is well-defined.
+    response_times: dict[str, list[float]] = {}
+    for simulation in gatling_data.get_simulations():
+        for run_timestamp in gatling_data.get_runs(simulation):
+            for request_name in gatling_data.get_requests(simulation, run_timestamp):
+                rd = gatling_data.get_request_data(simulation, run_timestamp, request_name)
+                if rd is None:
+                    continue
+                response_times.setdefault(request_name, []).extend(rd.response_times)
+
+    percentiles = {
+        req: calculate_percentiles(times, method) for req, times in response_times.items()
+    }
+
+    return CompareInput(
+        path=path,
+        label=label or path.resolve().name,
+        percentiles=percentiles,
+    )
+
+
+def format_change(diff: float, baseline: float) -> str:
+    """Render the percent-change cell with a directional arrow.
+
+    `:arrow_down:` means faster (improvement), `:arrow_up:` means slower (regression).
+    Returns `N/A` if baseline is 0 (percent is undefined).
+    """
+    if baseline == 0:
+        return "N/A"
+    pct = (diff / baseline) * 100
+    pct_str = f"{pct:+.1f}%"
+    if diff < 0:
+        return f":arrow_down: {pct_str}"
+    if diff > 0:
+        return f":arrow_up: {pct_str}"
+    return pct_str
+
+
+def format_compare_markdown(
+    inputs: list[CompareInput], percentile_keys: list[str], percentile_titles: dict[str, str]
+) -> str:
+    """Render one Markdown table per percentile, plus a header naming each input."""
+    if len(inputs) < 2:
+        raise ValueError("compare requires at least two inputs")
+
+    baseline = inputs[0]
+    others = inputs[1:]
+
+    lines: list[str] = []
+
+    def header_for(role: str, label: str, dir_name: str) -> str:
+        # Omit the redundant label when it defaults to the dir basename.
+        if label == dir_name:
+            return f"> {role}: `{dir_name}`"
+        return f"> {role} ({label}): `{dir_name}`"
+
+    lines.append(header_for("Baseline", baseline.label, baseline.path.name))
+    for i, other in enumerate(others, start=2):
+        lines.append(header_for(f"Run {i}", other.label, other.path.name))
+
+    # Row order: each request appears in the order it first shows up across the
+    # inputs (baseline first, then each other input's unique requests). That
+    # preserves simulation.csv order rather than re-sorting by magnitude.
+    ordered_requests: list[str] = []
+    seen: set[str] = set()
+    for inp in inputs:
+        for req in inp.percentiles.keys():
+            if req not in seen:
+                seen.add(req)
+                ordered_requests.append(req)
+
+    for pkey in percentile_keys:
+        title = percentile_titles[pkey]
+
+        # Header
+        header_cells = ["Scenario", "Baseline"]
+        align_cells = [":---", "---:"]
+        for other in others:
+            header_cells.extend([other.label, "Diff", "Change"])
+            align_cells.extend(["---:", "---:", ":---"])
+
+        lines.append("")
+        lines.append(f"### {title} (ms)")
+        lines.append("")
+        lines.append("| " + " | ".join(header_cells) + " |")
+        lines.append("|" + "|".join(align_cells) + "|")
+
+        for req in ordered_requests:
+            bval = baseline.percentiles.get(req, {}).get(pkey)
+            row = [req]
+            row.append("-" if bval is None else f"{bval:,.0f}")
+            for other in others:
+                oval = other.percentiles.get(req, {}).get(pkey)
+                if oval is None or bval is None:
+                    row.extend(["-", "-", "-"])
+                else:
+                    diff = oval - bval
+                    row.append(f"{oval:,.0f}")
+                    row.append(f"{diff:+,.0f}")
+                    row.append(format_change(diff, bval))
+            lines.append("| " + " | ".join(row) + " |")
+
+    lines.append("")
+    lines.append("_:arrow_down: = faster (improvement), :arrow_up: = slower (regression)_")
+    return "\n".join(lines) + "\n"
+
+
 def format_output(gatling_data: GatlingData) -> None:
     """Format and print results as CSV."""
     print("directory,simulation,run_timestamp,request_name,count,min,50th,75th,95th,99th,max")
@@ -1353,7 +1487,7 @@ def format_output(gatling_data: GatlingData) -> None:
             run_data = gatling_data.get_run_data(simulation, run_timestamp)
             if run_data:
                 for request_name, request_data in run_data.requests.items():
-                    directory = f"{simulation}-{run_timestamp}"
+                    directory = run_data.directory.name
 
                     print(
                         f"{directory},{simulation},{run_data.formatted_timestamp},{request_name},{request_data.count},"
@@ -1432,12 +1566,133 @@ def main():
         sys.exit(1)
 
 
+COMPARE_HELP = """\
+Usage: gstat compare <baseline-dir> [--label NAME] <other-dir> [--label NAME] ... [options]
+
+Compare percentiles across two or more Gatling runs as Markdown tables.
+The first run is the baseline. Each non-baseline run gets three columns:
+the percentile value, Diff (other - baseline, in ms), and Change
+((other - baseline) / baseline * 100, in %).
+
+Each input may be followed by --label NAME to override the column header
+(default: the directory's basename).
+
+Options:
+  --percentile {50,75,95,99}  Percentile(s) to render. Repeat for multiple. Default: 50 and 95.
+  --method {exact,tdigest}    Percentile calculation method (default: exact).
+  --exclude STRING            Exclude report directories containing this string (e.g. 'warmup').
+  -h, --help                  Show this help.
+
+Examples:
+  gstat compare ./baseline ./candidate
+  gstat compare ./a --label baseline ./b --label candidate --percentile 95
+  gstat compare ./run-2.41.8 --label 2.41.8 \\
+                ./run-2.42.4 --label 2.42.4 \\
+                ./run-2.43.0 --label 2.43.0 --method tdigest
+"""
+
+
+def _main_compare(argv: list[str]) -> None:
+    """Run the `compare` subcommand.
+
+    Hand-parses argv so per-input `--label` flags stay bound to the preceding
+    positional input. argparse can't express that binding with nargs="+".
+    """
+    if argv and argv[0] in ("-h", "--help"):
+        print(COMPARE_HELP, end="")
+        return
+
+    inputs: list[tuple[Path, str | None]] = []
+    method = "exact"
+    exclude: str | None = None
+    percentile_keys: list[str] = []
+
+    i = 0
+    while i < len(argv):
+        token = argv[i]
+        if token == "--label":
+            if not inputs:
+                print("Error: --label must follow an input directory", file=sys.stderr)
+                sys.exit(2)
+            if i + 1 >= len(argv):
+                print("Error: --label requires a value", file=sys.stderr)
+                sys.exit(2)
+            path, _ = inputs[-1]
+            inputs[-1] = (path, argv[i + 1])
+            i += 2
+        elif token == "--method":
+            if i + 1 >= len(argv) or argv[i + 1] not in ("exact", "tdigest"):
+                print("Error: --method requires one of: exact, tdigest", file=sys.stderr)
+                sys.exit(2)
+            method = argv[i + 1]
+            i += 2
+        elif token == "--exclude":
+            if i + 1 >= len(argv):
+                print("Error: --exclude requires a value", file=sys.stderr)
+                sys.exit(2)
+            exclude = argv[i + 1]
+            i += 2
+        elif token == "--percentile":
+            if i + 1 >= len(argv) or argv[i + 1] not in ("50", "75", "95", "99"):
+                print("Error: --percentile requires one of: 50, 75, 95, 99", file=sys.stderr)
+                sys.exit(2)
+            percentile_keys.append(argv[i + 1])
+            i += 2
+        elif token in ("-h", "--help"):
+            print(COMPARE_HELP, end="")
+            return
+        elif token.startswith("--"):
+            print(f"Error: unknown option {token}", file=sys.stderr)
+            sys.exit(2)
+        else:
+            inputs.append((Path(token), None))
+            i += 1
+
+    if len(inputs) < 2:
+        print("Error: compare requires at least two input directories", file=sys.stderr)
+        print("", file=sys.stderr)
+        print(COMPARE_HELP, end="", file=sys.stderr)
+        sys.exit(2)
+
+    for path, _ in inputs:
+        if not path.exists():
+            print(f"Directory does not exist: {path}", file=sys.stderr)
+            sys.exit(1)
+        if not path.is_dir():
+            print(f"Path is not a directory: {path}", file=sys.stderr)
+            sys.exit(1)
+
+    if not percentile_keys:
+        percentile_keys = ["50", "95"]
+
+    pkey_to_field = {"50": "50th", "75": "75th", "95": "95th", "99": "99th"}
+    fields = [pkey_to_field[p] for p in percentile_keys]
+    titles = {
+        "50th": "Median Response Time (p50)",
+        "75th": "75th Percentile Response Time (p75)",
+        "95th": "95th Percentile Response Time (p95)",
+        "99th": "99th Percentile Response Time (p99)",
+    }
+
+    collected = [collect_compare_input(path, label, method, exclude) for path, label in inputs]
+
+    print(format_compare_markdown(collected, fields, titles), end="")
+
+
 def _main():
     """Internal main function."""
+    if len(sys.argv) > 1 and sys.argv[1] == "compare":
+        _main_compare(sys.argv[2:])
+        return
+
     parser = argparse.ArgumentParser(
         description="Calculate percentiles from Gatling simulation.csv files",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
+Subcommands:
+  compare       Render a Markdown comparison table across two or more runs. See
+                `gstat compare --help` for usage.
+
 Plot Types:
   distribution   Histogram showing the full distribution of response times with percentile lines.
                  Good for: Understanding the shape of your distribution, identifying clusters

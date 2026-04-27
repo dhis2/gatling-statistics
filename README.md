@@ -93,9 +93,41 @@ Choose between exact calculation (default) or T-Digest approximation:
 # Use exact percentile calculation (default)
 gstat <report_directory>
 
-# Use T-Digest algorithm (matches Gatling's method)
+# Use T-Digest algorithm (approximation; does not match Gatling's numbers)
 gstat <report_directory> --method tdigest
 ```
+
+#### Limitations
+
+Neither method reproduces Gatling's HTML report numbers. Gatling uses the Java
+[`AVLTreeDigest(compression=100)`](https://github.com/tdunning/t-digest) with separately
+tracked min/max and singleton-aware tail interpolation. `--method exact` uses
+`numpy.percentile(..., method="nearest")`; `--method tdigest` uses
+[CamDavidsonPilon/tdigest](https://github.com/CamDavidsonPilon/tdigest), a different t-digest
+variant with different tail behavior. No maintained Python port of Gatling's t-digest exists.
+Typical deltas on small samples are a few ms; use `gstat` for run-to-run comparisons, not to
+reproduce the HTML table.
+
+### Comparing runs
+
+Generate a Markdown comparison table across two or more runs (first input is the baseline,
+deltas are computed against it):
+
+```bash
+# Two-run baseline vs candidate
+gstat compare ./baseline ./candidate
+
+# Three-run release-note style
+gstat compare \
+  ./run-2.41.8 --label 2.41.8 \
+  ./run-2.42.4 --label 2.42.4 \
+  ./run-2.43.0 --label 2.43.0 \
+  --percentile 95 --method tdigest
+```
+
+Output is one Markdown table per percentile (default p50 and p95) with `Diff` and `Change`
+columns per non-baseline input. If a run directory contains warmup subdirectories you want
+to skip, pass `--exclude warmup`.
 
 ### Plotting
 

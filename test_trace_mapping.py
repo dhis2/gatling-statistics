@@ -143,30 +143,34 @@ user,Single Events,,,,1762133613933,,,,end,,,
                 # Request without group hierarchy (NaN) - tests dropna=False
                 "Login": (1, [108], 108.0),
                 # Requests with single-level hierarchy
-                "Get a list of single events|Go to first page of program VBqh0ynB2wv": (
+                "Get a list of single events / Go to first page of program VBqh0ynB2wv": (
                     1,
                     [59],
                     59.0,
                 ),
-                "Get a list of TEs|Get first page of TEs of program ur1Edk5Oe2n": (1, [134], 134.0),
-                "Get a list of TEs|Go to single enrollment|Get first enrollment": (1, [7], 7.0),
+                "Get a list of TEs / Get first page of TEs of program ur1Edk5Oe2n": (
+                    1,
+                    [134],
+                    134.0,
+                ),
+                "Get a list of TEs / Go to single enrollment / Get first enrollment": (1, [7], 7.0),
                 # Requests with nested hierarchy - same request_name, different contexts
-                "Get a list of single events|Get one single event|Get first event": (
+                "Get a list of single events / Get one single event / Get first event": (
                     2,
                     [23, 14],
                     18.5,
                 ),
-                "Get a list of single events|Get one single event|Get relationships for first event": (
+                "Get a list of single events / Get one single event / Get relationships for first event": (
                     2,
                     [5, 4],
                     4.5,
                 ),
-                "Get a list of TEs|Go to single enrollment|Get one event|Get first event from enrollment": (
+                "Get a list of TEs / Go to single enrollment / Get one event / Get first event from enrollment": (
                     2,
                     [13, 13],
                     13.0,
                 ),
-                "Get a list of TEs|Go to single enrollment|Get one event|Get relationships for first event": (
+                "Get a list of TEs / Go to single enrollment / Get one event / Get relationships for first event": (
                     2,
                     [3, 4],
                     3.5,
