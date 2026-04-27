@@ -9,25 +9,13 @@ discussion.
 
 Captured while regenerating every p95 table in the 2.43 release notes from `gstat`.
 
-* **Cell suppression policy for KO-only scenarios.** Today `gstat` omits the row entirely
-when there are no OK samples. That's correct percentile semantics, but in a `compare`
-table the row simply disappears and the reader can't see the "this version failed
-completely" signal. Emitting the row with `-` (or a parameter such as
-`--ko-policy=show`) would let release notes preserve the failure signal without manual
-work.
-  * **Open**: pick a sentinel for "all KO" that does not collide with `-` (used today for
-"request not present in this run"). Candidates: `KO`, `failed`, `0/N`, `100% KO`.
-  * **Answer**: `KO`. Three letters, matches Gatling's own terminology, fits in a
-narrow column without ragged alignment. `failed` is wordier and not what Gatling
-calls it. `0/N` and `100% KO` overload the cell with information that already lives
-in the surrounding KO-counts text. Document the two sentinels together: `-` = "request
-not present", `KO` = "request present, all attempts KO'd".
-  * **Open**: row-level (whole row is `KO`) or cell-level (some runs OK, some KO)?
-  * **Answer**: cell-level. The release-note matched-concurrency tables (Shape B
-above) need rows where 2.41 has `KO` at 4u but real numbers at 2u; a row-level rule
-would force splitting those into two tables. The cost is that a Markdown reader has to
-glance across a row to assess it, but that is the natural reading direction anyway.
-Implementation is the same either way; the choice only affects what we render.
+* **Add `req_per_sec` (throughput) column.** Both default and `--combine` CSV outputs, and
+the `compare` Markdown, would benefit from a throughput column alongside `count`. Gatling
+calls this `Cnt/s` and computes it as `count / run_duration_seconds` over the full
+population. We'd compute the same way (over OK+KO since percentiles already are) and
+expose it as `req_per_sec`. Skipped from this round because the run-duration math has its
+own small design question (per-request time span vs. whole-run duration; Gatling uses
+whole-run) that is worth resolving in its own commit.
 
 * **Add request filtering to `gstat compare`.** Two recurring needs collapse into one
 flag pair: drop noise rows the user does not care about (e.g. `Login`, which most
@@ -168,15 +156,3 @@ mechanism that emits "p95 per (version, users)" can emit "p95 per (version, base
 with deltas". No need for a separate `--against <pattern>` flag if the pivot lands
 first. Revisit only if Shape B does not generalise.
 
-### Observations on percentile drift vs Gatling HTML
-
-While regenerating the 2.43 tables we saw drift between Gatling's t-digest output and
-`gstat`'s numpy-linear method scale predictably with two factors: **sample size** and
-**tail shape**. Healthy populations (n > 1000, no bimodality) match within ±5 ms, exactly
-what the README claims. Pathological cells diverge much more. The biggest single gap was
-`Search Birth events` at 2.43 multi-user 2u: Gatling 4,106 ms → gstat 2,512 ms (−1,594 ms,
-−39%) on n=33 with a strongly bimodal distribution (~90 ms vs ~3 s modes). Other
-multi-second drifts clustered on the same scenario at other concurrency levels. Nothing
-to fix in `gstat` — these are real artifacts of the underlying runs that t-digest happens
-to smear over. Worth surfacing in the README as a worked example of why the method
-matters; pairs naturally with the low-n confidence cues bullet above.

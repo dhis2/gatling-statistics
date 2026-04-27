@@ -82,7 +82,12 @@ updatemenus_default = {
 
 
 def parse_simulation_csv(csv_path: Path) -> pd.DataFrame:
-    """Parse simulation.csv and return successful requests.
+    """Parse simulation.csv and return all request records (OK and KO).
+
+    Percentiles are computed over the full population on purpose: when KOs are
+    present the percentile shifts regardless of which subset you'd pick (OK-only
+    biases toward survivors, KO-only is a failure-mode artifact). Surfacing the
+    KO count alongside lets the reader judge whether a row is comparable.
 
     Example of a simulation.csv
 
@@ -95,14 +100,12 @@ def parse_simulation_csv(csv_path: Path) -> pd.DataFrame:
         print(f"Error reading CSV file {csv_path}: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # only consider response times of successful requests (ignore group and user entries in csv)
-    request_df = df[(df["record_type"] == "request") & (df["status"] == "OK")].copy()
+    request_df = df[df["record_type"] == "request"].copy()
 
     if request_df.empty:
-        print(f"No successful request records found in {csv_path}", file=sys.stderr)
+        print(f"No request records found in {csv_path}", file=sys.stderr)
         sys.exit(1)
 
-    # Ensure data types are as expected
     request_df["start_timestamp"] = pd.to_datetime(request_df["start_timestamp"], unit="ms")
     request_df["end_timestamp"] = pd.to_datetime(request_df["end_timestamp"], unit="ms")
     request_df["response_time_ms"] = pd.to_numeric(request_df["response_time_ms"])
@@ -142,6 +145,8 @@ class RequestData(NamedTuple):
     percentiles: dict[str, float]
     mean: float
     count: int
+    ok_count: int
+    ko_count: int
 
 
 class RunData:
@@ -615,6 +620,8 @@ def _load_single_directory(gatling_data: GatlingData, directory: Path) -> None:
         percentiles = calculate_percentiles(response_times)
         mean = np.mean(response_times)
         count = len(response_times)
+        ok_count = int((group["status"] == "OK").sum())
+        ko_count = count - ok_count
 
         request_data = RequestData(
             response_times=response_times,
@@ -622,6 +629,8 @@ def _load_single_directory(gatling_data: GatlingData, directory: Path) -> None:
             percentiles=percentiles,
             mean=mean,
             count=count,
+            ok_count=ok_count,
+            ko_count=ko_count,
         )
 
         gatling_data.add_request_data(
@@ -1379,23 +1388,43 @@ class CompareInput(NamedTuple):
     path: Path
     label: str
     percentiles: dict[str, dict[str, float]]  # {request_name: {percentile_key: value}}
+    ok_ko_counts: dict[str, tuple[int, int]]  # {request_name: (ok_count, ko_count)}
 
 
-def combine_response_times(gatling_data: GatlingData) -> dict[str, list[float]]:
-    """Combine response times across all simulations and runs, keyed by request name.
+class CombinedRequest(NamedTuple):
+    """Per-request data combined across all simulations and runs of one input."""
 
-    Used by `gstat --combine` and `gstat compare`. Walks request data in the order
-    GatlingData provides (which mirrors Gatling's HTML report order), so any consumer
-    that iterates the result preserves that order via dict insertion semantics.
+    response_times: list[float]
+    ok_count: int
+    ko_count: int
+
+
+def combine_request_data(gatling_data: GatlingData) -> dict[str, CombinedRequest]:
+    """Combine response times and OK/KO counts across all simulations and runs.
+
+    Walks request data in the order GatlingData provides (Gatling's HTML report
+    order), so dict insertion order is preserved for consumers that iterate.
     """
-    combined: dict[str, list[float]] = {}
+    combined: dict[str, CombinedRequest] = {}
     for simulation in gatling_data.get_simulations():
         for run_timestamp in gatling_data.get_runs(simulation):
             for request_name in gatling_data.get_requests(simulation, run_timestamp):
                 rd = gatling_data.get_request_data(simulation, run_timestamp, request_name)
                 if rd is None:
                     continue
-                combined.setdefault(request_name, []).extend(rd.response_times)
+                prev = combined.get(request_name)
+                if prev is None:
+                    combined[request_name] = CombinedRequest(
+                        response_times=list(rd.response_times),
+                        ok_count=rd.ok_count,
+                        ko_count=rd.ko_count,
+                    )
+                else:
+                    prev.response_times.extend(rd.response_times)
+                    combined[request_name] = prev._replace(
+                        ok_count=prev.ok_count + rd.ok_count,
+                        ko_count=prev.ko_count + rd.ko_count,
+                    )
     return combined
 
 
@@ -1407,13 +1436,15 @@ def collect_compare_input(path: Path, label: str | None, exclude: str | None) ->
     percentiles over the combined response times.
     """
     gatling_data = load_gatling_data(path, exclude)
-    response_times = combine_response_times(gatling_data)
-    percentiles = {req: calculate_percentiles(times) for req, times in response_times.items()}
+    combined = combine_request_data(gatling_data)
+    percentiles = {req: calculate_percentiles(c.response_times) for req, c in combined.items()}
+    ok_ko_counts = {req: (c.ok_count, c.ko_count) for req, c in combined.items()}
 
     return CompareInput(
         path=path,
         label=label or path.resolve().name,
         percentiles=percentiles,
+        ok_ko_counts=ok_ko_counts,
     )
 
 
@@ -1471,15 +1502,22 @@ def format_compare_markdown(
                 seen.add(req)
                 ordered_requests.append(req)
 
+    def ko_pct_cell(inp: CompareInput, req: str) -> str:
+        ok, ko = inp.ok_ko_counts.get(req, (0, 0))
+        total = ok + ko
+        if total == 0:
+            return "-"
+        return f"{(ko / total) * 100:.1f}%"
+
     for pkey in percentile_keys:
         title = percentile_titles[pkey]
 
         # Header
-        header_cells = ["Scenario", baseline.label]
-        align_cells = [":---", "---:"]
+        header_cells = ["Scenario", baseline.label, "KO%"]
+        align_cells = [":---", "---:", "---:"]
         for other in others:
-            header_cells.append(other.label)
-            align_cells.append("---:")
+            header_cells.extend([other.label, "KO%"])
+            align_cells.extend(["---:", "---:"])
             if show_diff:
                 header_cells.append("Diff")
                 align_cells.append("---:")
@@ -1497,17 +1535,18 @@ def format_compare_markdown(
             bval = baseline.percentiles.get(req, {}).get(pkey)
             row = [req]
             row.append("-" if bval is None else f"{bval:,.0f}")
+            row.append(ko_pct_cell(baseline, req))
             for other in others:
                 oval = other.percentiles.get(req, {}).get(pkey)
+                row.append("-" if oval is None else f"{oval:,.0f}")
+                row.append(ko_pct_cell(other, req))
                 if oval is None or bval is None:
-                    row.append("-")
                     if show_diff:
                         row.append("-")
                     if show_change:
                         row.append("-")
                 else:
                     diff = oval - bval
-                    row.append(f"{oval:,.0f}")
                     if show_diff:
                         row.append(f"{diff:+,.0f}")
                     if show_change:
@@ -1522,7 +1561,10 @@ def format_compare_markdown(
 
 def format_output(gatling_data: GatlingData) -> None:
     """Format and print results as CSV."""
-    print("directory,simulation,run_timestamp,request_name,count,min,50th,75th,95th,99th,max")
+    print(
+        "directory,simulation,run_timestamp,request_name,"
+        "count,ok_count,ko_count,min,50th,75th,95th,99th,max"
+    )
 
     # Data is already sorted by GatlingData.finalize_ordering()
     for simulation in gatling_data.get_simulations():
@@ -1533,7 +1575,8 @@ def format_output(gatling_data: GatlingData) -> None:
                     directory = run_data.directory.name
 
                     print(
-                        f"{directory},{simulation},{run_data.formatted_timestamp},{request_name},{request_data.count},"
+                        f"{directory},{simulation},{run_data.formatted_timestamp},{request_name},"
+                        f"{request_data.count},{request_data.ok_count},{request_data.ko_count},"
                         f"{request_data.percentiles['min']:.0f},"
                         f"{request_data.percentiles['50th']:.0f},"
                         f"{request_data.percentiles['75th']:.0f},"
@@ -1551,20 +1594,21 @@ def format_output_combined(gatling_data: GatlingData) -> None:
     per-run output: no `run_timestamp` column, `directory` is the input the user
     passed, `count` is the total sample count.
     """
-    print("directory,simulation,request_name,count,min,50th,75th,95th,99th,max")
+    print("directory,simulation,request_name,count,ok_count,ko_count,min,50th,75th,95th,99th,max")
 
-    response_times = combine_response_times(gatling_data)
-    if not response_times:
+    combined = combine_request_data(gatling_data)
+    if not combined:
         return
 
     # All runs in one input share a simulation in practice; pick the first.
     simulation = gatling_data.get_simulations()[0] if gatling_data.get_simulations() else ""
     directory = gatling_data.report_directory.name if gatling_data.report_directory else ""
 
-    for request_name, times in response_times.items():
-        percentiles = calculate_percentiles(times)
+    for request_name, c in combined.items():
+        percentiles = calculate_percentiles(c.response_times)
         print(
-            f"{directory},{simulation},{request_name},{len(times)},"
+            f"{directory},{simulation},{request_name},"
+            f"{len(c.response_times)},{c.ok_count},{c.ko_count},"
             f"{percentiles['min']:.0f},"
             f"{percentiles['50th']:.0f},"
             f"{percentiles['75th']:.0f},"

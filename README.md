@@ -68,7 +68,9 @@ containing multiple report directories.
 * `simulation`: Name of the simulation extracted from directory name
 * `run_timestamp`: Timestamp of the run extracted from directory name
 * `request_name`: HTTP request name/endpoint
-* `count`: Number of successful requests
+* `count`: Total number of requests (OK + KO)
+* `ok_count`: Number of OK (successful) requests
+* `ko_count`: Number of KO (failed) requests
 * `min`: Minimum response time (ms)
 * `50th`: 50th percentile response time (ms)
 * `75th`: 75th percentile response time (ms)
@@ -77,10 +79,32 @@ containing multiple report directories.
 * `max`: Maximum response time (ms)
 
 ```csv
-simulation,run_timestamp,request_name,count,min,50th,75th,95th,99th,max
-trackerexportertests,20250627064559771,events,38,320,357,380,557,1258,1258
-trackerexportertests,20250627095400668,events,7,2138,2346,2383,3345,3345,3345
+simulation,run_timestamp,request_name,count,ok_count,ko_count,min,50th,75th,95th,99th,max
+trackerexportertests,20250627064559771,events,38,38,0,320,357,380,557,1258,1258
+trackerexportertests,20250627095400668,events,7,5,2,2138,2346,2383,3345,3345,3345
 ```
+
+### Status handling
+
+Percentiles are computed over **all** request rows (OK and KO together), not just the OK
+subset. Filtering to OK would silently bias the sample toward survivors (the same row in
+two runs would be computed over different populations); filtering to KO is a failure-mode
+artifact. The `ok_count` and `ko_count` columns let you judge whether a row is comparable
+without us pre-judging.
+
+What KO response times mean depends on the failure mode:
+
+* **Transport failures** (timeouts, connection refused, TLS errors): `response_time_ms`
+is an artifact of the failure path. Timeouts clamp at the timeout setting (e.g. 60,000 ms),
+inflating upper percentiles. Fast network errors are near zero.
+* **Check failures** (default `status.is(2xx)` rejected a 4xx/5xx, or a body assertion
+failed): the server actually responded, so `response_time_ms` is real and statistically
+meaningful.
+
+When comparing runs, treat any row where either side has `ko_count > 0` as "comparison
+not meaningful." The numbers are still in the table for transparency; the KO column tells
+you whether to trust them. This matches Gatling's HTML summary table, which also computes
+percentiles over the full (OK + KO) population.
 
 ### Combining multiple runs
 

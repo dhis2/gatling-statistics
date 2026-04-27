@@ -310,60 +310,60 @@ class TestPercentilesOutput(unittest.TestCase):
     # "average per-run percentiles": e.g. ANC import warmup p99=50, main p99=87, but
     # the combined p99 below is 58 (computed over 2000 samples), not 68.5 (average).
     COMBINED_OUTPUT_BOTH_RUNS = """\
-directory,simulation,request_name,count,min,50th,75th,95th,99th,max
-fixtures,trackertest,Get ANC events / Get one event / Get first event,200,13,15,16,42,67,99
-fixtures,trackertest,Get ANC events / Get one event / Get relationships for first event,200,2,3,3,4,6,39
-fixtures,trackertest,Get ANC events / Go to first page,200,9,87,147,150,159,2837
-fixtures,trackertest,Get ANC events / Go to second page,200,10,87,147,150,159,2723
-fixtures,trackertest,Get ANC events / Search not assigned,200,9,91,147,151,158,169
-fixtures,trackertest,Get ANC events / Search by date range,200,10,356,693,703,714,717
-fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get first event from enrollment,200,20,21,22,25,29,41
-fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get relationships for first event,200,2,3,4,5,8,17
-fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get first tracked entity,200,16,17,18,28,34,39
-fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get first enrollment,200,7,8,9,19,26,35
-fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get relationships for first tracked entity,200,3,4,4,5,7,15
-fixtures,trackertest,Get Child Programme TEs / Not found TE by name with like operator,200,52,68,69,71,81,155
-fixtures,trackertest,Get Child Programme TEs / Not found TE by name with eq operator,200,3,4,5,6,7,9
-fixtures,trackertest,Get Child Programme TEs / Search TE by name with like operator,200,65,111,113,118,137,146
-fixtures,trackertest,Get Child Programme TEs / Search TE by name with eq operator,200,14,15,16,25,38,51
-fixtures,trackertest,Get Child Programme TEs / Search Birth events,200,56,664,1286,1296,1318,1900
-fixtures,trackertest,Get Child Programme TEs / Get TEs from events,200,5,6,6,9,11,16
-fixtures,trackertest,Get Child Programme TEs / Get first page of TEs,200,19,68,104,108,112,114
-fixtures,trackertest,Get Child Programme TEs / Get TEs with enrollment status,200,75,127,129,133,140,155
-fixtures,trackertest,Login,10,92,98,105,141,159,163
-fixtures,trackertest,MNCH import,2000,56,96,106,129,220,1296
-fixtures,trackertest,Child Programme import,2000,65,68,71,76,86,338
-fixtures,trackertest,ANC import,2000,33,36,38,44,58,587
+directory,simulation,request_name,count,ok_count,ko_count,min,50th,75th,95th,99th,max
+fixtures,trackertest,Get ANC events / Get one event / Get first event,200,200,0,13,15,16,42,67,99
+fixtures,trackertest,Get ANC events / Get one event / Get relationships for first event,200,200,0,2,3,3,4,6,39
+fixtures,trackertest,Get ANC events / Go to first page,200,200,0,9,87,147,150,159,2837
+fixtures,trackertest,Get ANC events / Go to second page,200,200,0,10,87,147,150,159,2723
+fixtures,trackertest,Get ANC events / Search not assigned,200,200,0,9,91,147,151,158,169
+fixtures,trackertest,Get ANC events / Search by date range,200,200,0,10,356,693,703,714,717
+fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get first event from enrollment,200,200,0,20,21,22,25,29,41
+fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get relationships for first event,200,200,0,2,3,4,5,8,17
+fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get first tracked entity,200,200,0,16,17,18,28,34,39
+fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get first enrollment,200,200,0,7,8,9,19,26,35
+fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get relationships for first tracked entity,200,200,0,3,4,4,5,7,15
+fixtures,trackertest,Get Child Programme TEs / Not found TE by name with like operator,200,200,0,52,68,69,71,81,155
+fixtures,trackertest,Get Child Programme TEs / Not found TE by name with eq operator,200,200,0,3,4,5,6,7,9
+fixtures,trackertest,Get Child Programme TEs / Search TE by name with like operator,200,200,0,65,111,113,118,137,146
+fixtures,trackertest,Get Child Programme TEs / Search TE by name with eq operator,200,200,0,14,15,16,25,38,51
+fixtures,trackertest,Get Child Programme TEs / Search Birth events,200,200,0,56,664,1286,1296,1318,1900
+fixtures,trackertest,Get Child Programme TEs / Get TEs from events,200,200,0,5,6,6,9,11,16
+fixtures,trackertest,Get Child Programme TEs / Get first page of TEs,200,200,0,19,68,104,108,112,114
+fixtures,trackertest,Get Child Programme TEs / Get TEs with enrollment status,200,200,0,75,127,129,133,140,155
+fixtures,trackertest,Login,10,10,0,92,98,105,141,159,163
+fixtures,trackertest,MNCH import,2000,2000,0,56,96,106,129,220,1296
+fixtures,trackertest,Child Programme import,2000,2000,0,65,68,71,76,86,338
+fixtures,trackertest,ANC import,2000,2000,0,33,36,38,44,58,587
 """
 
     # Snapshot of `gstat --combine --exclude warmup ./tests/fixtures/`. With warmup
     # dropped, only the main run survives, so `count` and percentiles match what the
     # per-run output emits for the main fixture alone.
     COMBINED_OUTPUT_MAIN_ONLY = """\
-directory,simulation,request_name,count,min,50th,75th,95th,99th,max
-fixtures,trackertest,Get ANC events / Get one event / Get first event,100,13,14,15,40,53,67
-fixtures,trackertest,Get ANC events / Get one event / Get relationships for first event,100,2,3,3,3,4,7
-fixtures,trackertest,Get ANC events / Go to first page,100,9,147,148,151,159,165
-fixtures,trackertest,Get ANC events / Go to second page,100,10,147,148,153,159,161
-fixtures,trackertest,Get ANC events / Search not assigned,100,9,147,148,153,159,169
-fixtures,trackertest,Get ANC events / Search by date range,100,10,693,695,709,715,717
-fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get first event from enrollment,100,20,21,22,23,26,27
-fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get relationships for first event,100,2,3,3,4,5,8
-fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get first tracked entity,100,16,17,17,19,26,27
-fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get first enrollment,100,7,8,9,18,26,26
-fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get relationships for first tracked entity,100,3,4,4,4,5,7
-fixtures,trackertest,Get Child Programme TEs / Not found TE by name with like operator,100,67,69,70,75,81,108
-fixtures,trackertest,Get Child Programme TEs / Not found TE by name with eq operator,100,3,4,4,6,6,7
-fixtures,trackertest,Get Child Programme TEs / Search TE by name with like operator,100,111,113,114,122,137,146
-fixtures,trackertest,Get Child Programme TEs / Search TE by name with eq operator,100,14,15,15,17,26,29
-fixtures,trackertest,Get Child Programme TEs / Search Birth events,100,86,1286,1290,1302,1321,1900
-fixtures,trackertest,Get Child Programme TEs / Get TEs from events,100,5,6,6,7,8,9
-fixtures,trackertest,Get Child Programme TEs / Get first page of TEs,100,19,104,105,109,114,114
-fixtures,trackertest,Get Child Programme TEs / Get TEs with enrollment status,100,127,129,130,134,140,144
-fixtures,trackertest,Login,5,94,98,99,111,113,114
-fixtures,trackertest,MNCH import,1000,56,94,103,119,174,626
-fixtures,trackertest,Child Programme import,1000,65,68,70,75,84,251
-fixtures,trackertest,ANC import,1000,33,36,38,43,87,587
+directory,simulation,request_name,count,ok_count,ko_count,min,50th,75th,95th,99th,max
+fixtures,trackertest,Get ANC events / Get one event / Get first event,100,100,0,13,14,15,40,53,67
+fixtures,trackertest,Get ANC events / Get one event / Get relationships for first event,100,100,0,2,3,3,3,4,7
+fixtures,trackertest,Get ANC events / Go to first page,100,100,0,9,147,148,151,159,165
+fixtures,trackertest,Get ANC events / Go to second page,100,100,0,10,147,148,153,159,161
+fixtures,trackertest,Get ANC events / Search not assigned,100,100,0,9,147,148,153,159,169
+fixtures,trackertest,Get ANC events / Search by date range,100,100,0,10,693,695,709,715,717
+fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get first event from enrollment,100,100,0,20,21,22,23,26,27
+fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get relationships for first event,100,100,0,2,3,3,4,5,8
+fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get first tracked entity,100,100,0,16,17,17,19,26,27
+fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get first enrollment,100,100,0,7,8,9,18,26,26
+fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get relationships for first tracked entity,100,100,0,3,4,4,4,5,7
+fixtures,trackertest,Get Child Programme TEs / Not found TE by name with like operator,100,100,0,67,69,70,75,81,108
+fixtures,trackertest,Get Child Programme TEs / Not found TE by name with eq operator,100,100,0,3,4,4,6,6,7
+fixtures,trackertest,Get Child Programme TEs / Search TE by name with like operator,100,100,0,111,113,114,122,137,146
+fixtures,trackertest,Get Child Programme TEs / Search TE by name with eq operator,100,100,0,14,15,15,17,26,29
+fixtures,trackertest,Get Child Programme TEs / Search Birth events,100,100,0,86,1286,1290,1302,1321,1900
+fixtures,trackertest,Get Child Programme TEs / Get TEs from events,100,100,0,5,6,6,7,8,9
+fixtures,trackertest,Get Child Programme TEs / Get first page of TEs,100,100,0,19,104,105,109,114,114
+fixtures,trackertest,Get Child Programme TEs / Get TEs with enrollment status,100,100,0,127,129,130,134,140,144
+fixtures,trackertest,Login,5,5,0,94,98,99,111,113,114
+fixtures,trackertest,MNCH import,1000,1000,0,56,94,103,119,174,626
+fixtures,trackertest,Child Programme import,1000,1000,0,65,68,70,75,84,251
+fixtures,trackertest,ANC import,1000,1000,0,33,36,38,43,87,587
 """
 
     @staticmethod
@@ -383,7 +383,8 @@ fixtures,trackertest,ANC import,1000,33,36,38,43,87,587
         header, *rows = [line for line in out.splitlines() if line]
         self.assertEqual(
             header,
-            "directory,simulation,run_timestamp,request_name,count,min,50th,75th,95th,99th,max",
+            "directory,simulation,run_timestamp,request_name,"
+            "count,ok_count,ko_count,min,50th,75th,95th,99th,max",
         )
         self.assertEqual(len(rows), 46)
         timestamps = {row.split(",")[2] for row in rows}
@@ -459,19 +460,19 @@ class TestCompare(unittest.TestCase):
         self.assertIn("### 95th Percentile Response Time (p95) (ms)", out)
         self.assertNotIn("### Median Response Time", out)
 
-        # Table column headers
-        self.assertIn("| Scenario | warmup | main | Diff | Change |", out)
+        # Table column headers (KO% column always present, per run)
+        self.assertIn("| Scenario | warmup | KO% | main | KO% | Diff | Change |", out)
 
         # Improvement: small absolute diff, sub-3% change. Exercises down-arrow + sign.
-        self.assertIn("| ANC import | 44 | 43 | -1 | :arrow_down: -2.3% |", out)
+        self.assertIn("| ANC import | 44 | 0.0% | 43 | 0.0% | -1 | :arrow_down: -2.3% |", out)
 
         # Improvement: large negative diff, double-digit percent. Exercises down-arrow + double-digit.
-        self.assertIn("| Login | 152 | 111 | -41 | :arrow_down: -26.9% |", out)
+        self.assertIn("| Login | 152 | 0.0% | 111 | 0.0% | -41 | :arrow_down: -26.9% |", out)
 
         # Regression: large positive diff, near-100%, comma-formatted four-digit value.
         # Exercises up-arrow + {:,.0f} comma + multi-percent.
         self.assertIn(
-            "| Get Child Programme TEs / Search Birth events | 665 | 1,302 | +637 | :arrow_up: +95.8% |",
+            "| Get Child Programme TEs / Search Birth events | 665 | 0.0% | 1,302 | 0.0% | +637 | :arrow_up: +95.8% |",
             out,
         )
 
@@ -507,11 +508,11 @@ request,,,Search,OK,1762133595900,1762133595950,50,,,,,false
 
             out = format_compare_markdown([baseline, candidate], ["95th"], self.PERCENTILE_TITLES)
 
-        # Login is in both: real numbers + diff/change
-        self.assertIn("| Login | 108 | 120 | +12 | :arrow_up: +11.1% |", out)
-        # Search is only in candidate: baseline cell `-`, but value/diff/change all `-`
-        # because the function bails when either side is None.
-        self.assertIn("| Search | - | - | - | - |", out)
+        # Login is in both: real numbers + diff/change. KO% = 0 in both inputs.
+        self.assertIn("| Login | 108 | 0.0% | 120 | 0.0% | +12 | :arrow_up: +11.1% |", out)
+        # Search is only in candidate: baseline value `-`, baseline KO% `-`,
+        # candidate value/KO% real, but diff/change `-` because baseline is None.
+        self.assertIn("| Search | - | - | 50 | 0.0% | - | - |", out)
 
     def test_compare_no_diff_drops_diff_column_only(self):
         """`--no-diff` removes the Diff column but keeps the candidate value and Change."""
@@ -522,12 +523,12 @@ request,,,Search,OK,1762133595900,1762133595950,50,,,,,false
             [baseline, candidate], ["95th"], self.PERCENTILE_TITLES, show_diff=False
         )
 
-        # Diff column header is gone; Change is still there.
-        self.assertIn("| Scenario | warmup | main | Change |", out)
+        # Diff column header is gone; Change is still there. KO% stays per run.
+        self.assertIn("| Scenario | warmup | KO% | main | KO% | Change |", out)
         self.assertNotIn("Diff", out)
 
-        # A row that previously read "| 152 | 111 | -41 | :arrow_down: -26.9% |" loses the -41.
-        self.assertIn("| Login | 152 | 111 | :arrow_down: -26.9% |", out)
+        # Row loses the -41 Diff cell but keeps the KO% cells.
+        self.assertIn("| Login | 152 | 0.0% | 111 | 0.0% | :arrow_down: -26.9% |", out)
 
         # Arrow legend stays because Change column is present.
         self.assertIn(
@@ -543,14 +544,14 @@ request,,,Search,OK,1762133595900,1762133595950,50,,,,,false
             [baseline, candidate], ["95th"], self.PERCENTILE_TITLES, show_change=False
         )
 
-        # Change column header is gone; Diff is still there.
-        self.assertIn("| Scenario | warmup | main | Diff |", out)
+        # Change column header is gone; Diff is still there. KO% stays per run.
+        self.assertIn("| Scenario | warmup | KO% | main | KO% | Diff |", out)
         self.assertNotIn("Change", out)
         self.assertNotIn(":arrow_down:", out)
         self.assertNotIn(":arrow_up:", out)
 
         # Row keeps the Diff cell, drops the Change cell.
-        self.assertIn("| Login | 152 | 111 | -41 |", out)
+        self.assertIn("| Login | 152 | 0.0% | 111 | 0.0% | -41 |", out)
 
     def test_compare_no_diff_no_change_leaves_only_value_columns(self):
         """Both toggles together collapse each candidate to a single value column."""
@@ -565,10 +566,54 @@ request,,,Search,OK,1762133595900,1762133595950,50,,,,,false
             show_change=False,
         )
 
-        self.assertIn("| Scenario | warmup | main |", out)
+        self.assertIn("| Scenario | warmup | KO% | main | KO% |", out)
         self.assertNotIn("Diff", out)
         self.assertNotIn("Change", out)
-        self.assertIn("| Login | 152 | 111 |", out)
+        self.assertIn("| Login | 152 | 0.0% | 111 | 0.0% |", out)
+
+    def test_compare_ko_rows_contribute_to_percentile_and_ko_pct(self):
+        """KO rows are included in the percentile and reported in the KO% column.
+        Pins the "don't filter, surface KO%" choice: a KO row's response_time is in the
+        sample, the KO% column lets the reader gate trust."""
+        # Baseline: 4 OK rows at 100ms.
+        # Candidate: 4 OK rows at 100ms + 1 KO row at 60000ms (mimics a transport timeout).
+        # p95 over [100,100,100,100] = 100. p95 over [100,100,100,100,60000] = 48,020.
+        # fmt: off
+        # ruff: noqa: E501
+        baseline_csv = """record_type,scenario_name,group_hierarchy,request_name,status,start_timestamp,end_timestamp,response_time_ms,error_message,event_type,duration_ms,cumulated_response_time_ms,is_incoming
+request,,,Search,OK,1,101,100,,,,,false
+request,,,Search,OK,2,102,100,,,,,false
+request,,,Search,OK,3,103,100,,,,,false
+request,,,Search,OK,4,104,100,,,,,false
+"""
+        candidate_csv = """record_type,scenario_name,group_hierarchy,request_name,status,start_timestamp,end_timestamp,response_time_ms,error_message,event_type,duration_ms,cumulated_response_time_ms,is_incoming
+request,,,Search,OK,1,101,100,,,,,false
+request,,,Search,OK,2,102,100,,,,,false
+request,,,Search,OK,3,103,100,,,,,false
+request,,,Search,OK,4,104,100,,,,,false
+request,,,Search,KO,5,60005,60000,Request timeout,,,,false
+"""
+        # fmt: on
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            a = Path(tmpdir) / "a-20250101010101010-test"
+            b = Path(tmpdir) / "b-20250101010101010-test"
+            a.mkdir()
+            b.mkdir()
+            (a / "simulation.csv").write_text(baseline_csv)
+            (b / "simulation.csv").write_text(candidate_csv)
+
+            baseline = collect_compare_input(a, label="clean", exclude=None)
+            candidate = collect_compare_input(b, label="failing", exclude=None)
+
+            out = format_compare_markdown([baseline, candidate], ["95th"], self.PERCENTILE_TITLES)
+
+        # Candidate p95 is dominated by the timeout-clamped KO sample (48,020 ms).
+        # Baseline KO% is 0%, candidate is 1/5 = 20.0%.
+        self.assertIn(
+            "| Search | 100 | 0.0% | 48,020 | 20.0% | +47,920 | :arrow_up: +47920.0% |",
+            out,
+        )
 
     def test_compare_row_order_is_first_seen_across_inputs(self):
         """Row order in the compare table is "first seen across inputs", baseline first.
