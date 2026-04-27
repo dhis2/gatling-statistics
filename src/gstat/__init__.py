@@ -1193,6 +1193,9 @@ def plot_timeline(gatling_data: GatlingData) -> go.Figure:
                     simulation, run_timestamp, request_name
                 )
 
+                if not request_data or not request_data.timestamps:
+                    continue
+
                 # Extract start timestamps, end timestamps and response times
                 start_timestamps, end_timestamps = zip(*request_data.timestamps, strict=False)
                 response_times = request_data.response_times
