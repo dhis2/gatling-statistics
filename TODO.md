@@ -16,6 +16,16 @@ population. We'd compute the same way (over OK+KO since percentiles already are)
 expose it as `req_per_sec`. Skipped from this round because the run-duration math has its
 own small design question (per-request time span vs. whole-run duration; Gatling uses
 whole-run) that is worth resolving in its own commit.
+  * **Workflow data point (2026-04-27).** Re-confirmed during the 2.43 release-note
+regeneration: every concurrency-sweep, soak, and pool-comparison table needs a `req/s`
+column next to `p95`. Today the author either eyeballs Gatling's HTML index page or
+divides `count` by the configured run duration. For a 300s sweep this came out close to
+Gatling's number but **not identical** (e.g. 2.43.0 6u Child p95 row: gstat
+`count=3156`, naive 3156/300 = 10.52, but Gatling HTML/release-note value is 10.48 —
+Gatling computes over the actual measured window, not the nominal `importDurationSec`).
+That ~0.4% drift is enough to make hand-stitched tables disagree with Gatling's HTML by
+1 in the second decimal, which is exactly the kind of small noise that erodes trust.
+Strong argument for landing this column: same number, same source.
 
 * **Add request filtering to `gstat compare`.** Two recurring needs collapse into one
 flag pair: drop noise rows the user does not care about (e.g. `Login`, which most
@@ -34,24 +44,39 @@ case (`--exclude-request '^Login$'`) is still trivial because the full path equa
 the bare name when there is no group prefix.
 
 * **Accept the run wrapper directory, not the inner `gatling-report-…/trackertest-…`
-path.** Today `gstat compare` errors with "simulation.csv not found" when pointed at the
-unzipped artifact directory. The wrapper is what `gh run download` produces and what
-users actually have on disk; the inner dir is workflow plumbing. Composing
-`"$run/$inner"` for ~30 invocations was the single biggest paper cut.
+path.** Today both `gstat <dir>` and `gstat compare <dir> …` error with "simulation.csv
+not found" when pointed at the unzipped artifact directory. The wrapper is what `gh run
+download` produces and what users actually have on disk; the inner dir is workflow
+plumbing. Composing `"$run"/gatling-report-*/` for ~30 invocations was the single
+biggest paper cut.
   * **Open**: reproduce the failure with a real `gh run download` artifact first. `gstat`
 already has `is_multiple_reports_directory` for nested layouts; the bug may be in the
 regex or the skip path rather than a missing feature.
-  * **Answer**: reproduced. With a `gh run download` artifact at
-`runs/2.43.0-load-6users-300s-24555271744/`, `gstat compare runs/2.43.0-load-6users-300s-24555271744 …`
-errors with `Error: simulation.csv not found in 2.43.0-load-6users-300s-24555271744`,
-which means `is_multiple_reports_directory` is rejecting that layout. The wrapper
-contains exactly one child (`gatling-report-DHIS2-…-attempt-1/`) which itself contains
-two `trackertest-…` dirs (one warmup, one measured). So the actual layout is
-**three** levels deep: `wrapper / gatling-report-… / trackertest-…`. The detector
-likely only walks one level. Fix is in detection, not a new feature: descend through
-single-child dirs until a `trackertest-…` (or `simulation.csv`) is found, then treat
-the inner dir as the report root. `--exclude warmup` continues to filter at the leaf
-level. Add a regression test using a real artifact tree.
+  * **Answer**: reproduced (re-confirmed 2026-04-27 during the 2.43 release-note
+regeneration). With a `gh run download` artifact at
+`runs/2.43.0-load-6users-300s-24555271744/`:
+
+    ```
+    $ gstat --exclude warmup runs/2.43.0-load-6users-300s-24555271744
+    Error: simulation.csv not found in 2.43.0-load-6users-300s-24555271744
+    ```
+
+    Working invocation today (the paper-cut workaround):
+
+    ```
+    $ gstat --exclude warmup runs/2.43.0-load-6users-300s-24555271744/gatling-report-*/
+    ```
+
+    Same shape for `gstat compare`. The wrapper contains exactly one child
+(`gatling-report-DHIS2-…-attempt-1/`) which itself contains two `trackertest-…` dirs
+(one warmup, one measured). So the actual layout is **three** levels deep: `wrapper /
+gatling-report-… / trackertest-…`. `is_multiple_reports_directory` likely only walks
+one level. Fix is in detection, not a new feature: descend through single-child dirs
+until a `trackertest-…` (or `simulation.csv`) is found, then treat the inner dir as
+the report root. `--exclude warmup` continues to filter at the leaf level. Add a
+regression test using a real artifact tree (one wrapper containing one
+`gatling-report-…/` containing two `trackertest-…/` subdirs, one with `warmup` in the
+name).
 
 * **Add Markdown table output to the default `gstat <dir>` command (in addition to CSV).**
 Same data, different format. Useful for pasting into PR descriptions and Jira tickets
