@@ -4,8 +4,10 @@
 To run: uv run python tests/test_gstat.py
 """
 
+import io
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
 import pandas as pd
@@ -13,6 +15,8 @@ import pandas as pd
 from gstat import (
     collect_compare_input,
     format_compare_markdown,
+    format_output,
+    format_output_combined,
     load_gatling_data,
     order_requests_gatling_html,
     plot_percentiles_stacked,
@@ -26,6 +30,7 @@ WARMUP_FIXTURE_DIR = (
     / "fixtures"
     / "trackertest-20260424070546336-2.43.0-smoke-1u-1000req-warmup-1"
 )
+FIXTURES_PARENT = Path(__file__).parent / "fixtures"
 
 
 class TestTraceMapping(unittest.TestCase):
@@ -287,6 +292,135 @@ class TestGatlingHtmlOrdering(unittest.TestCase):
             ("", "logout"),
         ]
         self.assertEqual(order_requests_gatling_html(df), expected)
+
+
+class TestPercentilesOutput(unittest.TestCase):
+    """End-to-end tests for the percentiles output (default and `--combine`).
+
+    Per-run output emits one row per (run, request); combined output combines response
+    times across all runs of a request and emits one row per request, with percentiles
+    recomputed over the combined samples. Both share the same Gatling HTML row order.
+    Tests assert against the committed fixture pair (warmup + main) so a real two-run
+    combine is exercised.
+    """
+
+    # Hand-checked snapshot of `gstat --combine ./tests/fixtures/`. Numbers are
+    # numpy.percentile(..., method="linear") over the combined warmup + main response
+    # times for each request. Distinguishes "combine samples then compute" from
+    # "average per-run percentiles": e.g. ANC import warmup p99=50, main p99=87, but
+    # the combined p99 below is 58 (computed over 2000 samples), not 68.5 (average).
+    COMBINED_OUTPUT_BOTH_RUNS = """\
+directory,simulation,request_name,count,min,50th,75th,95th,99th,max
+fixtures,trackertest,Get ANC events / Get one event / Get first event,200,13,15,16,42,67,99
+fixtures,trackertest,Get ANC events / Get one event / Get relationships for first event,200,2,3,3,4,6,39
+fixtures,trackertest,Get ANC events / Go to first page,200,9,87,147,150,159,2837
+fixtures,trackertest,Get ANC events / Go to second page,200,10,87,147,150,159,2723
+fixtures,trackertest,Get ANC events / Search not assigned,200,9,91,147,151,158,169
+fixtures,trackertest,Get ANC events / Search by date range,200,10,356,693,703,714,717
+fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get first event from enrollment,200,20,21,22,25,29,41
+fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get relationships for first event,200,2,3,4,5,8,17
+fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get first tracked entity,200,16,17,18,28,34,39
+fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get first enrollment,200,7,8,9,19,26,35
+fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get relationships for first tracked entity,200,3,4,4,5,7,15
+fixtures,trackertest,Get Child Programme TEs / Not found TE by name with like operator,200,52,68,69,71,81,155
+fixtures,trackertest,Get Child Programme TEs / Not found TE by name with eq operator,200,3,4,5,6,7,9
+fixtures,trackertest,Get Child Programme TEs / Search TE by name with like operator,200,65,111,113,118,137,146
+fixtures,trackertest,Get Child Programme TEs / Search TE by name with eq operator,200,14,15,16,25,38,51
+fixtures,trackertest,Get Child Programme TEs / Search Birth events,200,56,664,1286,1296,1318,1900
+fixtures,trackertest,Get Child Programme TEs / Get TEs from events,200,5,6,6,9,11,16
+fixtures,trackertest,Get Child Programme TEs / Get first page of TEs,200,19,68,104,108,112,114
+fixtures,trackertest,Get Child Programme TEs / Get TEs with enrollment status,200,75,127,129,133,140,155
+fixtures,trackertest,Login,10,92,98,105,141,159,163
+fixtures,trackertest,MNCH import,2000,56,96,106,129,220,1296
+fixtures,trackertest,Child Programme import,2000,65,68,71,76,86,338
+fixtures,trackertest,ANC import,2000,33,36,38,44,58,587
+"""
+
+    # Snapshot of `gstat --combine --exclude warmup ./tests/fixtures/`. With warmup
+    # dropped, only the main run survives, so `count` and percentiles match what the
+    # per-run output emits for the main fixture alone.
+    COMBINED_OUTPUT_MAIN_ONLY = """\
+directory,simulation,request_name,count,min,50th,75th,95th,99th,max
+fixtures,trackertest,Get ANC events / Get one event / Get first event,100,13,14,15,40,53,67
+fixtures,trackertest,Get ANC events / Get one event / Get relationships for first event,100,2,3,3,3,4,7
+fixtures,trackertest,Get ANC events / Go to first page,100,9,147,148,151,159,165
+fixtures,trackertest,Get ANC events / Go to second page,100,10,147,148,153,159,161
+fixtures,trackertest,Get ANC events / Search not assigned,100,9,147,148,153,159,169
+fixtures,trackertest,Get ANC events / Search by date range,100,10,693,695,709,715,717
+fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get first event from enrollment,100,20,21,22,23,26,27
+fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get relationships for first event,100,2,3,3,4,5,8
+fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get first tracked entity,100,16,17,17,19,26,27
+fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get first enrollment,100,7,8,9,18,26,26
+fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get relationships for first tracked entity,100,3,4,4,4,5,7
+fixtures,trackertest,Get Child Programme TEs / Not found TE by name with like operator,100,67,69,70,75,81,108
+fixtures,trackertest,Get Child Programme TEs / Not found TE by name with eq operator,100,3,4,4,6,6,7
+fixtures,trackertest,Get Child Programme TEs / Search TE by name with like operator,100,111,113,114,122,137,146
+fixtures,trackertest,Get Child Programme TEs / Search TE by name with eq operator,100,14,15,15,17,26,29
+fixtures,trackertest,Get Child Programme TEs / Search Birth events,100,86,1286,1290,1302,1321,1900
+fixtures,trackertest,Get Child Programme TEs / Get TEs from events,100,5,6,6,7,8,9
+fixtures,trackertest,Get Child Programme TEs / Get first page of TEs,100,19,104,105,109,114,114
+fixtures,trackertest,Get Child Programme TEs / Get TEs with enrollment status,100,127,129,130,134,140,144
+fixtures,trackertest,Login,5,94,98,99,111,113,114
+fixtures,trackertest,MNCH import,1000,56,94,103,119,174,626
+fixtures,trackertest,Child Programme import,1000,65,68,70,75,84,251
+fixtures,trackertest,ANC import,1000,33,36,38,43,87,587
+"""
+
+    @staticmethod
+    def _capture(fn, *args, **kwargs) -> str:
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            fn(*args, **kwargs)
+        return buf.getvalue()
+
+    def test_per_run_output(self):
+        """With both fixtures present, default output emits 23 requests x 2 runs = 46 data
+        rows. We assert structure (header, count, both timestamps) rather than a full
+        snapshot because the per-run rows include long auto-generated `directory` names."""
+        gatling_data = load_gatling_data(FIXTURES_PARENT)
+        out = self._capture(format_output, gatling_data)
+
+        header, *rows = [line for line in out.splitlines() if line]
+        self.assertEqual(
+            header,
+            "directory,simulation,run_timestamp,request_name,count,min,50th,75th,95th,99th,max",
+        )
+        self.assertEqual(len(rows), 46)
+        timestamps = {row.split(",")[2] for row in rows}
+        self.assertEqual(timestamps, {"2026-04-24 07:05:46", "2026-04-24 07:12:14"})
+
+    def test_combined_output_combines_runs(self):
+        """`--combine` combines warmup + main response times by request name and
+        recomputes percentiles. Full-output snapshot pins every value."""
+        gatling_data = load_gatling_data(FIXTURES_PARENT)
+        out = self._capture(format_output_combined, gatling_data)
+        self.assertEqual(out, self.COMBINED_OUTPUT_BOTH_RUNS)
+
+    def test_combined_output_with_exclude(self):
+        """`--exclude warmup` drops the warmup fixture before combining; the resulting
+        rows match what the main run produces alone."""
+        gatling_data = load_gatling_data(FIXTURES_PARENT, exclude="warmup")
+        out = self._capture(format_output_combined, gatling_data)
+        self.assertEqual(out, self.COMBINED_OUTPUT_MAIN_ONLY)
+
+    def test_combined_output_row_order_matches_per_run(self):
+        """Combined and per-run outputs share the same Gatling HTML row order."""
+        gatling_data = load_gatling_data(FIXTURES_PARENT, exclude="warmup")
+        per_run = self._capture(format_output, gatling_data)
+        combined = self._capture(format_output_combined, gatling_data)
+
+        # request_name is column 3 in per-run, column 2 in combined.
+        per_run_requests = [
+            row.split(",")[3]
+            for row in per_run.splitlines()
+            if row and not row.startswith("directory,")
+        ]
+        combined_requests = [
+            row.split(",")[2]
+            for row in combined.splitlines()
+            if row and not row.startswith("directory,")
+        ]
+        self.assertEqual(per_run_requests, combined_requests)
 
 
 class TestCompare(unittest.TestCase):

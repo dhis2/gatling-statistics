@@ -1381,6 +1381,24 @@ class CompareInput(NamedTuple):
     percentiles: dict[str, dict[str, float]]  # {request_name: {percentile_key: value}}
 
 
+def combine_response_times(gatling_data: GatlingData) -> dict[str, list[float]]:
+    """Combine response times across all simulations and runs, keyed by request name.
+
+    Used by `gstat --combine` and `gstat compare`. Walks request data in the order
+    GatlingData provides (which mirrors Gatling's HTML report order), so any consumer
+    that iterates the result preserves that order via dict insertion semantics.
+    """
+    combined: dict[str, list[float]] = {}
+    for simulation in gatling_data.get_simulations():
+        for run_timestamp in gatling_data.get_runs(simulation):
+            for request_name in gatling_data.get_requests(simulation, run_timestamp):
+                rd = gatling_data.get_request_data(simulation, run_timestamp, request_name)
+                if rd is None:
+                    continue
+                combined.setdefault(request_name, []).extend(rd.response_times)
+    return combined
+
+
 def collect_compare_input(path: Path, label: str | None, exclude: str | None) -> CompareInput:
     """Load one run and collapse it to {request_name: percentiles}.
 
@@ -1389,19 +1407,7 @@ def collect_compare_input(path: Path, label: str | None, exclude: str | None) ->
     percentiles over the combined response times.
     """
     gatling_data = load_gatling_data(path, exclude)
-
-    # Flatten across simulation/run, keyed by request name. If a request appears in
-    # multiple report dirs (e.g. multiple warmups left in), recompute percentiles over
-    # the combined response times so the result is well-defined.
-    response_times: dict[str, list[float]] = {}
-    for simulation in gatling_data.get_simulations():
-        for run_timestamp in gatling_data.get_runs(simulation):
-            for request_name in gatling_data.get_requests(simulation, run_timestamp):
-                rd = gatling_data.get_request_data(simulation, run_timestamp, request_name)
-                if rd is None:
-                    continue
-                response_times.setdefault(request_name, []).extend(rd.response_times)
-
+    response_times = combine_response_times(gatling_data)
     percentiles = {req: calculate_percentiles(times) for req, times in response_times.items()}
 
     return CompareInput(
@@ -1518,6 +1524,37 @@ def format_output(gatling_data: GatlingData) -> None:
                         f"{request_data.percentiles['99th']:.0f},"
                         f"{request_data.percentiles['max']:.0f}"
                     )
+
+
+def format_output_combined(gatling_data: GatlingData) -> None:
+    """Format and print combined results as CSV (one row per request).
+
+    Combines response times across all (simulation, run, request) tuples by request
+    name and computes percentiles over the combined samples. Schema differs from the
+    per-run output: no `run_timestamp` column, `directory` is the input the user
+    passed, `count` is the total sample count.
+    """
+    print("directory,simulation,request_name,count,min,50th,75th,95th,99th,max")
+
+    response_times = combine_response_times(gatling_data)
+    if not response_times:
+        return
+
+    # All runs in one input share a simulation in practice; pick the first.
+    simulation = gatling_data.get_simulations()[0] if gatling_data.get_simulations() else ""
+    directory = gatling_data.report_directory.name if gatling_data.report_directory else ""
+
+    for request_name, times in response_times.items():
+        percentiles = calculate_percentiles(times)
+        print(
+            f"{directory},{simulation},{request_name},{len(times)},"
+            f"{percentiles['min']:.0f},"
+            f"{percentiles['50th']:.0f},"
+            f"{percentiles['75th']:.0f},"
+            f"{percentiles['95th']:.0f},"
+            f"{percentiles['99th']:.0f},"
+            f"{percentiles['max']:.0f}"
+        )
 
 
 def show_plot_with_clipboard(
@@ -1750,6 +1787,9 @@ Examples:
   # Exclude directories containing a specific string
   gstat --exclude warmup ./samples/
   gstat --plot stacked --exclude warmup ./samples/
+
+  # Combine multiple runs into one row per request (combined samples)
+  gstat --combine --exclude warmup ./samples/
         """,
     )
     parser.add_argument(
@@ -1769,6 +1809,14 @@ Examples:
         "--exclude",
         type=str,
         help="Exclude directories containing this string (e.g., 'warmup')",
+    )
+    parser.add_argument(
+        "--combine",
+        action="store_true",
+        help=(
+            "Combine response times across all runs in the input directory and emit "
+            "one row per request. Useful when comparing multi-run baselines."
+        ),
     )
     parser.add_argument(
         "--version",
@@ -1802,6 +1850,8 @@ Examples:
                 fig = plot_percentiles(gatling_data)
 
         show_plot_with_clipboard(fig, gatling_data.report_directory, args.output)
+    elif args.combine:
+        format_output_combined(gatling_data)
     else:
         format_output(gatling_data)
 

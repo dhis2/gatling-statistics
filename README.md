@@ -82,6 +82,21 @@ trackerexportertests,20250627064559771,events,38,320,357,380,557,1258,1258
 trackerexportertests,20250627095400668,events,7,2138,2346,2383,3345,3345,3345
 ```
 
+### Combining multiple runs
+
+When the input has more than one report directory (e.g. five CI runs of the same scenario)
+the default output is one row per (run, request). To collapse those into one row per request
+with percentiles computed over the combined samples, pass `--combine`:
+
+```sh
+gstat --combine ./baseline                        # 5 runs → 1 row per request
+gstat --combine --exclude warmup ./baseline       # drop warmup runs first
+```
+
+The combined output drops the `run_timestamp` column. `count` is the sum across runs.
+Percentiles are computed over the combined response times, not averaged from per-run
+percentiles.
+
 ### Percentiles
 
 `gstat` uses
