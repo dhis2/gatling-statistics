@@ -9,17 +9,6 @@ discussion.
 
 Captured while regenerating every p95 table in the 2.43 release notes from `gstat`.
 
-* **Make the Diff (ms) and Change (%) columns selectable.** Release notes typically
-carry one or the other, not both. A `--columns p95,change` (or similar) selector lets
-the output drop straight into a release-note table without manual column deletion.
-  * **Open**: flag shape `--no-diff` / `--no-change` (booleans, cheap, covers the actual
-ask) or `--columns p50,change` (selector, more flexible, more parsing)?
-  * **Answer**: `--no-diff` / `--no-change`. The actual asks are "drop one specific
-column"; both are independent yes/no choices that compose cleanly. A `--columns`
-selector forces users to also re-list every column they want to keep, which is more
-typing for the same outcome. Reach for a selector only if a third toggle (or a
-re-ordering need) appears.
-
 * **Cell suppression policy for KO-only scenarios.** Today `gstat` omits the row entirely
 when there are no OK samples. That's correct percentile semantics, but in a `compare`
 table the row simply disappears and the reader can't see the "this version failed

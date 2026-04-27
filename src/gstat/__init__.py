@@ -1435,7 +1435,11 @@ def format_change(diff: float, baseline: float) -> str:
 
 
 def format_compare_markdown(
-    inputs: list[CompareInput], percentile_keys: list[str], percentile_titles: dict[str, str]
+    inputs: list[CompareInput],
+    percentile_keys: list[str],
+    percentile_titles: dict[str, str],
+    show_diff: bool = True,
+    show_change: bool = True,
 ) -> str:
     """Render one Markdown table per percentile, plus a header naming each input."""
     if len(inputs) < 2:
@@ -1474,8 +1478,14 @@ def format_compare_markdown(
         header_cells = ["Scenario", baseline.label]
         align_cells = [":---", "---:"]
         for other in others:
-            header_cells.extend([other.label, "Diff", "Change"])
-            align_cells.extend(["---:", "---:", ":---"])
+            header_cells.append(other.label)
+            align_cells.append("---:")
+            if show_diff:
+                header_cells.append("Diff")
+                align_cells.append("---:")
+            if show_change:
+                header_cells.append("Change")
+                align_cells.append(":---")
 
         lines.append("")
         lines.append(f"### {title} (ms)")
@@ -1490,16 +1500,23 @@ def format_compare_markdown(
             for other in others:
                 oval = other.percentiles.get(req, {}).get(pkey)
                 if oval is None or bval is None:
-                    row.extend(["-", "-", "-"])
+                    row.append("-")
+                    if show_diff:
+                        row.append("-")
+                    if show_change:
+                        row.append("-")
                 else:
                     diff = oval - bval
                     row.append(f"{oval:,.0f}")
-                    row.append(f"{diff:+,.0f}")
-                    row.append(format_change(diff, bval))
+                    if show_diff:
+                        row.append(f"{diff:+,.0f}")
+                    if show_change:
+                        row.append(format_change(diff, bval))
             lines.append("| " + " | ".join(row) + " |")
 
-    lines.append("")
-    lines.append("_:arrow_down: = faster (improvement), :arrow_up: = slower (regression)_")
+    if show_change:
+        lines.append("")
+        lines.append("_:arrow_down: = faster (improvement), :arrow_up: = slower (regression)_")
     return "\n".join(lines) + "\n"
 
 
@@ -1637,6 +1654,8 @@ Each input may be followed by --label NAME to override the column header
 Options:
   --percentile {50,75,95,99}  Percentile(s) to render. Repeat for multiple. Default: 50 and 95.
   --exclude STRING            Exclude report directories containing this string (e.g. 'warmup').
+  --no-diff                   Omit the Diff (ms) column from each candidate run.
+  --no-change                 Omit the Change (%) column (and arrow legend) from each candidate.
   -h, --help                  Show this help.
 
 Examples:
@@ -1661,6 +1680,8 @@ def _main_compare(argv: list[str]) -> None:
     inputs: list[tuple[Path, str | None]] = []
     exclude: str | None = None
     percentile_keys: list[str] = []
+    show_diff = True
+    show_change = True
 
     i = 0
     while i < len(argv):
@@ -1687,6 +1708,12 @@ def _main_compare(argv: list[str]) -> None:
                 sys.exit(2)
             percentile_keys.append(argv[i + 1])
             i += 2
+        elif token == "--no-diff":
+            show_diff = False
+            i += 1
+        elif token == "--no-change":
+            show_change = False
+            i += 1
         elif token in ("-h", "--help"):
             print(COMPARE_HELP, end="")
             return
@@ -1725,7 +1752,12 @@ def _main_compare(argv: list[str]) -> None:
 
     collected = [collect_compare_input(path, label, exclude) for path, label in inputs]
 
-    print(format_compare_markdown(collected, fields, titles), end="")
+    print(
+        format_compare_markdown(
+            collected, fields, titles, show_diff=show_diff, show_change=show_change
+        ),
+        end="",
+    )
 
 
 def _main():

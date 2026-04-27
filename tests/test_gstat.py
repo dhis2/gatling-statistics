@@ -513,6 +513,63 @@ request,,,Search,OK,1762133595900,1762133595950,50,,,,,false
         # because the function bails when either side is None.
         self.assertIn("| Search | - | - | - | - |", out)
 
+    def test_compare_no_diff_drops_diff_column_only(self):
+        """`--no-diff` removes the Diff column but keeps the candidate value and Change."""
+        baseline = collect_compare_input(WARMUP_FIXTURE_DIR, label="warmup", exclude=None)
+        candidate = collect_compare_input(FIXTURE_DIR, label="main", exclude=None)
+
+        out = format_compare_markdown(
+            [baseline, candidate], ["95th"], self.PERCENTILE_TITLES, show_diff=False
+        )
+
+        # Diff column header is gone; Change is still there.
+        self.assertIn("| Scenario | warmup | main | Change |", out)
+        self.assertNotIn("Diff", out)
+
+        # A row that previously read "| 152 | 111 | -41 | :arrow_down: -26.9% |" loses the -41.
+        self.assertIn("| Login | 152 | 111 | :arrow_down: -26.9% |", out)
+
+        # Arrow legend stays because Change column is present.
+        self.assertIn(
+            "_:arrow_down: = faster (improvement), :arrow_up: = slower (regression)_", out
+        )
+
+    def test_compare_no_change_drops_change_column_and_legend(self):
+        """`--no-change` removes the Change column and the arrow legend; Diff stays."""
+        baseline = collect_compare_input(WARMUP_FIXTURE_DIR, label="warmup", exclude=None)
+        candidate = collect_compare_input(FIXTURE_DIR, label="main", exclude=None)
+
+        out = format_compare_markdown(
+            [baseline, candidate], ["95th"], self.PERCENTILE_TITLES, show_change=False
+        )
+
+        # Change column header is gone; Diff is still there.
+        self.assertIn("| Scenario | warmup | main | Diff |", out)
+        self.assertNotIn("Change", out)
+        self.assertNotIn(":arrow_down:", out)
+        self.assertNotIn(":arrow_up:", out)
+
+        # Row keeps the Diff cell, drops the Change cell.
+        self.assertIn("| Login | 152 | 111 | -41 |", out)
+
+    def test_compare_no_diff_no_change_leaves_only_value_columns(self):
+        """Both toggles together collapse each candidate to a single value column."""
+        baseline = collect_compare_input(WARMUP_FIXTURE_DIR, label="warmup", exclude=None)
+        candidate = collect_compare_input(FIXTURE_DIR, label="main", exclude=None)
+
+        out = format_compare_markdown(
+            [baseline, candidate],
+            ["95th"],
+            self.PERCENTILE_TITLES,
+            show_diff=False,
+            show_change=False,
+        )
+
+        self.assertIn("| Scenario | warmup | main |", out)
+        self.assertNotIn("Diff", out)
+        self.assertNotIn("Change", out)
+        self.assertIn("| Login | 152 | 111 |", out)
+
     def test_compare_row_order_is_first_seen_across_inputs(self):
         """Row order in the compare table is "first seen across inputs", baseline first.
         Pins the `seen` set / `ordered_requests` accumulator behavior."""
