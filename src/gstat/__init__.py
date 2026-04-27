@@ -1451,7 +1451,7 @@ def collect_compare_input(path: Path, label: str | None, exclude: str | None) ->
 def format_change(diff: float, baseline: float) -> str:
     """Render the percent-change cell with a directional arrow.
 
-    `:arrow_down:` means faster (improvement), `:arrow_up:` means slower (regression).
+    `:arrow_down:` means faster, `:arrow_up:` means slower.
     Returns `N/A` if baseline is 0 (percent is undefined).
     """
     if baseline == 0:
@@ -1555,7 +1555,7 @@ def format_compare_markdown(
 
     if show_change:
         lines.append("")
-        lines.append("_:arrow_down: = faster (improvement), :arrow_up: = slower (regression)_")
+        lines.append("_:arrow_down: = faster, :arrow_up: = slower_")
     return "\n".join(lines) + "\n"
 
 

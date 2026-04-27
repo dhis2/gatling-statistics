@@ -427,7 +427,7 @@ fixtures,trackertest,ANC import,1000,1000,0,33,36,38,43,87,587
 class TestCompare(unittest.TestCase):
     """End-to-end tests for `gstat compare`.
 
-    Warmup-vs-main exercises both improvement (down-arrow) and regression (up-arrow) paths
+    Warmup-vs-main exercises both faster (down-arrow) and slower (up-arrow) paths
     on real numbers; the synthetic tests cover request-set differences and merged row order.
     """
 
@@ -477,9 +477,7 @@ class TestCompare(unittest.TestCase):
         )
 
         # Footer legend
-        self.assertIn(
-            "_:arrow_down: = faster (improvement), :arrow_up: = slower (regression)_", out
-        )
+        self.assertIn("_:arrow_down: = faster, :arrow_up: = slower_", out)
 
     def test_compare_handles_request_set_difference(self):
         """When a request appears in only one input, the missing-side cells render as `-`
@@ -531,9 +529,7 @@ request,,,Search,OK,1762133595900,1762133595950,50,,,,,false
         self.assertIn("| Login | 152 | 0.0% | 111 | 0.0% | :arrow_down: -26.9% |", out)
 
         # Arrow legend stays because Change column is present.
-        self.assertIn(
-            "_:arrow_down: = faster (improvement), :arrow_up: = slower (regression)_", out
-        )
+        self.assertIn("_:arrow_down: = faster, :arrow_up: = slower_", out)
 
     def test_compare_no_change_drops_change_column_and_legend(self):
         """`--no-change` removes the Change column and the arrow legend; Diff stays."""
