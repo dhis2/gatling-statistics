@@ -101,32 +101,49 @@ percentiles.
 
 `gstat` uses
 [`numpy.percentile`](https://numpy.org/doc/stable/reference/generated/numpy.percentile.html)
-with the `linear` method (numpy default, also called "type 7"). It runs over the full
-sample. Same definition as Prometheus and Grafana.
+with the `linear` method ("type 7", same as Prometheus and Grafana) over the full sorted
+sample.
 
 Gatling uses
 [`AVLTreeDigest`](https://github.com/tdunning/t-digest) (a t-digest variant) via the
 [`com.tdunning:t-digest` dependency pinned in Gatling](https://github.com/gatling/gatling/blob/main/project/Dependencies.scala).
-t-digest is an approximation algorithm for percentiles. Its main benefit is that t-digests
-built on different machines can be merged without losing accuracy.
-[Gatling Enterprise](https://gatling.io/) uses this to combine partial results from
-distributed load generators, and OSS Gatling inherits the same code path.
+t-digest does not store every sample; it summarizes the data into buckets ("centroids")
+and computes the percentile from those buckets. This is great for merging results from
+distributed load generators ([Gatling Enterprise](https://gatling.io/)) but on a single
+machine with the full sample on disk it costs us:
 
-We run on a single machine with the full sample on disk, so we gain nothing from
-mergeability and we pay two costs:
+* The error has no upper bound: how close it gets to the real percentile depends on the
+data. See the [Apache DataSketches notes](https://datasketches.apache.org/docs/tdigest/tdigest.html).
+* Tied centroids are broken at random and the randomness is not seeded, so re-running
+the report on the same input can give different values (we saw up to 5 ms drift at
+n=1000).
 
-* **You can't predict how wrong it will be.** There is no formula that tells you the
-maximum error of a t-digest result. How close it gets to the real percentile depends on the
-data. See the [Apache DataSketches
-notes](https://datasketches.apache.org/docs/tdigest/tdigest.html).
-* **Same input, different output.** When two response times are equally close to a t-digest
-bucket, `AVLTreeDigest` picks one at random. The randomness is not seeded, so running the
-report twice on the same input can give different p99 values (we saw up to 5 ms drift at
-n=1000). This is extra noise on top of whatever variance the system under test already has,
-and it is avoidable.
+`gstat` reads every sample and interpolates between the two adjacent sorted values. Same
+input, same output, every time.
 
-Because of this `gstat` numbers will not exactly match the Gatling HTML table. That is on
-purpose.
+#### How big is the gap?
+
+Healthy populations (n &gt; 1000, no heavy tail) match Gatling's HTML to within a few ms.
+The gap grows with two factors:
+
+* small **sample size**, and
+* **bimodal or long-tailed** distributions, where which side of the gap each method's
+interpolation lands on moves the percentile by orders of magnitude.
+
+The largest gap we have seen comes from the [DHIS2 2.43 tracker performance release
+notes](https://github.com/dhis2/dhis2-releases/blob/main/releases/2.43/tracker-performance.md).
+`Search Birth events` under multi-user export at 2 users on 2.43.0 with **n = 33** and a
+bimodal distribution (~90 ms vs ~3 s modes):
+
+| Method | p95 |
+|---|---|
+| Gatling HTML (`AVLTreeDigest`) | 4,106 ms |
+| `gstat` (numpy linear) | 2,512 ms |
+| Δ | -1,594 ms (-39%) |
+
+So Gatling's HTML is fine for healthy populations and routine sweeps, but on small-sample
+or heavy-tailed scenarios the answer can be off by tens of percent. Watch the `count`
+column to know when you are in that territory.
 
 ### Comparing runs
 
