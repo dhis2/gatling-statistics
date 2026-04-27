@@ -9,11 +9,6 @@ discussion.
 
 Captured while regenerating every p95 table in the 2.43 release notes from `gstat`.
 
-* **Use `--label` for the baseline column header.** The blockquote line above the table
-already includes the supplied `--label` (e.g. `> Baseline (warmup): ...`). The table
-column itself, though, is hard-coded to `Baseline` regardless of the label. One-line fix
-in `format_compare_markdown` to mirror what the candidate columns already do.
-
 * **Make the Diff (ms) and Change (%) columns selectable.** Release notes typically
 carry one or the other, not both. A `--columns p95,change` (or similar) selector lets
 the output drop straight into a release-note table without manual column deletion.

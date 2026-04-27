@@ -460,7 +460,7 @@ class TestCompare(unittest.TestCase):
         self.assertNotIn("### Median Response Time", out)
 
         # Table column headers
-        self.assertIn("| Scenario | Baseline | main | Diff | Change |", out)
+        self.assertIn("| Scenario | warmup | main | Diff | Change |", out)
 
         # Improvement: small absolute diff, sub-3% change. Exercises down-arrow + sign.
         self.assertIn("| ANC import | 44 | 43 | -1 | :arrow_down: -2.3% |", out)

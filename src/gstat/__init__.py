@@ -1471,7 +1471,7 @@ def format_compare_markdown(
         title = percentile_titles[pkey]
 
         # Header
-        header_cells = ["Scenario", "Baseline"]
+        header_cells = ["Scenario", baseline.label]
         align_cells = [":---", "---:"]
         for other in others:
             header_cells.extend([other.label, "Diff", "Change"])
