@@ -18,7 +18,6 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from tdigest import TDigest
 
 try:
     from ._version import __version__, commit_id
@@ -111,20 +110,19 @@ def parse_simulation_csv(csv_path: Path) -> pd.DataFrame:
     return request_df
 
 
-def calculate_percentiles(response_times: list[float], method: str = "exact") -> dict[str, float]:
-    if method == "tdigest":
-        return calculate_percentiles_tdigest(response_times)
-    else:
-        return calculate_percentiles_exact(response_times)
+def calculate_percentiles(response_times: list[float]) -> dict[str, float]:
+    """Calculate percentiles over the full sample using numpy.
 
-
-def calculate_percentiles_exact(response_times: list[float]) -> dict[str, float]:
-    """Calculate exact percentiles using numpy."""
+    Uses the linear interpolation method (numpy default, also known as "type 7"),
+    which is what Prometheus, Grafana, and most monitoring tools use.
+    Percentiles may be fractional (e.g. 950.05 ms) since they interpolate between
+    adjacent observations.
+    """
     if not response_times:
         return {"min": 0, "50th": 0, "75th": 0, "95th": 0, "99th": 0, "max": 0}
 
     # https://numpy.org/doc/stable/reference/generated/numpy.percentile.html#numpy-percentile
-    percentiles = np.percentile(response_times, [0, 50, 75, 95, 99, 100], method="nearest")
+    percentiles = np.percentile(response_times, [0, 50, 75, 95, 99, 100], method="linear")
 
     return {
         "min": percentiles[0],
@@ -133,25 +131,6 @@ def calculate_percentiles_exact(response_times: list[float]) -> dict[str, float]
         "95th": percentiles[3],
         "99th": percentiles[4],
         "max": percentiles[5],
-    }
-
-
-def calculate_percentiles_tdigest(response_times: list[float]) -> dict[str, float]:
-    """Calculate percentiles using T-Digest algorithm (like Gatling which uses https://github.com/tdunning/t-digest)."""
-    if not response_times:
-        return {"min": 0, "50th": 0, "75th": 0, "95th": 0, "99th": 0, "max": 0}
-
-    digest = TDigest()
-    for time in response_times:
-        digest.update(time)
-
-    return {
-        "min": digest.percentile(0),
-        "50th": digest.percentile(50),
-        "75th": digest.percentile(75),
-        "95th": digest.percentile(95),
-        "99th": digest.percentile(99),
-        "max": digest.percentile(100),
     }
 
 
@@ -524,7 +503,7 @@ def is_multiple_reports_directory(directory: Path) -> bool:
     return False
 
 
-def load_gatling_data(directory: Path, method: str = "exact", exclude: str = None) -> GatlingData:
+def load_gatling_data(directory: Path, exclude: str = None) -> GatlingData:
     """Load all Gatling data from directory, handling both single and multi-directory cases."""
     gatling_data = GatlingData(directory)
 
@@ -538,12 +517,12 @@ def load_gatling_data(directory: Path, method: str = "exact", exclude: str = Non
                 continue
 
             try:
-                _load_single_directory(gatling_data, subdir, method)
+                _load_single_directory(gatling_data, subdir)
             except Exception as e:
                 print(f"Warning: Error processing {subdir}: {e}", file=sys.stderr)
                 continue
     else:
-        _load_single_directory(gatling_data, directory, method)
+        _load_single_directory(gatling_data, directory)
 
     gatling_data.finalize_ordering()
 
@@ -554,7 +533,55 @@ def load_gatling_data(directory: Path, method: str = "exact", exclude: str = Non
     return gatling_data
 
 
-def _load_single_directory(gatling_data: GatlingData, directory: Path, method: str) -> None:
+def order_requests_gatling_html(df: pd.DataFrame) -> list[tuple[str, str]]:
+    """Return (group_hierarchy, request_name) keys in Gatling HTML report order.
+
+    Gatling's HTML statistics table renders, at each group level, all nested
+    subgroups first (recursively) and then leaf requests. Within each bucket the
+    order is the order of first appearance in simulation.csv: glog-cli writes
+    one CSV row per record in simulation.log, in log order, which is the same
+    order Gatling's own LinkedHashMap-backed GroupContainer ingests them for
+    the HTML report. Top-level (groupless) requests come last, after every
+    hierarchy has been rendered, matching how the root GroupContainer is walked.
+
+    `df` must have `group_hierarchy` (pipe-separated, "" for no group) and
+    `request_name` columns, in CSV order.
+    """
+
+    class Node:
+        __slots__ = ("subgroups", "leaves", "_seen_leaves")
+
+        def __init__(self):
+            self.subgroups: OrderedDict[str, Node] = OrderedDict()
+            self.leaves: list[str] = []
+            self._seen_leaves: set[str] = set()
+
+    root = Node()
+    for gh, rn in zip(df["group_hierarchy"], df["request_name"], strict=False):
+        parts = gh.split("|") if gh else []
+        node = root
+        for part in parts:
+            if part not in node.subgroups:
+                node.subgroups[part] = Node()
+            node = node.subgroups[part]
+        if rn not in node._seen_leaves:
+            node._seen_leaves.add(rn)
+            node.leaves.append(rn)
+
+    ordered: list[tuple[str, str]] = []
+
+    def walk(node: Node, hierarchy: list[str]) -> None:
+        for name, child in node.subgroups.items():
+            walk(child, hierarchy + [name])
+        gh = "|".join(hierarchy)
+        for leaf in node.leaves:
+            ordered.append((gh, leaf))
+
+    walk(root, [])
+    return ordered
+
+
+def _load_single_directory(gatling_data: GatlingData, directory: Path) -> None:
     """Load Gatling data from a directory directly containing one simulation.csv"""
     parsed = parse_gating_directory_name(directory.name)
     if parsed:
@@ -569,25 +596,23 @@ def _load_single_directory(gatling_data: GatlingData, directory: Path, method: s
 
     df = parse_simulation_csv(simulation_csv)
 
-    # Group by (group_hierarchy, request_name) so requests with the same name
-    # in different hierarchies stay separate. Sorted so requests cluster by
-    # group (nested groups nest lexicographically) — matches the layout of
-    # Gatling's HTML report and stays stable regardless of concurrency.
-    # Fill NaN with "" so top-level (groupless) requests sort first rather
-    # than last (pandas treats NaN as greater than any string under sort).
+    # Iterate in Gatling HTML report order. See order_requests_gatling_html.
     df = df.copy()
     df["group_hierarchy"] = df["group_hierarchy"].fillna("")
-    for (group_hierarchy, request_name), group in df.groupby(["group_hierarchy", "request_name"]):
+    ordered_keys = order_requests_gatling_html(df)
+    groups = dict(list(df.groupby(["group_hierarchy", "request_name"], sort=False)))
+    for group_hierarchy, request_name in ordered_keys:
+        group = groups[(group_hierarchy, request_name)]
         # Compose the display path using Gatling's HTML separator (" / "), with
         # the inner "|" from glog's CSV (nested groups) swapped to " / " as well.
         full_path = (
             f"{group_hierarchy.replace('|', ' / ')} / {request_name}"
-            if pd.notna(group_hierarchy) and group_hierarchy
+            if group_hierarchy
             else request_name
         )
         response_times = group["response_time_ms"].tolist()
         timestamps = list(zip(group["start_timestamp"], group["end_timestamp"], strict=False))
-        percentiles = calculate_percentiles(response_times, method)
+        percentiles = calculate_percentiles(response_times)
         mean = np.mean(response_times)
         count = len(response_times)
 
@@ -1356,17 +1381,14 @@ class CompareInput(NamedTuple):
     percentiles: dict[str, dict[str, float]]  # {request_name: {percentile_key: value}}
 
 
-def collect_compare_input(
-    path: Path, label: str | None, method: str, exclude: str | None
-) -> CompareInput:
+def collect_compare_input(path: Path, label: str | None, exclude: str | None) -> CompareInput:
     """Load one run and collapse it to {request_name: percentiles}.
 
     A run is a single Gatling report dir or a dir of them. If multiple report dirs
-    remain after `exclude`, requests with the same name are merged by averaging response
-    times across reports (count-weighted is unnecessary since the typical case after
-    `--exclude warmup` is one report dir).
+    remain after `exclude`, requests with the same name are merged by recomputing
+    percentiles over the combined response times.
     """
-    gatling_data = load_gatling_data(path, method, exclude)
+    gatling_data = load_gatling_data(path, exclude)
 
     # Flatten across simulation/run, keyed by request name. If a request appears in
     # multiple report dirs (e.g. multiple warmups left in), recompute percentiles over
@@ -1380,9 +1402,7 @@ def collect_compare_input(
                     continue
                 response_times.setdefault(request_name, []).extend(rd.response_times)
 
-    percentiles = {
-        req: calculate_percentiles(times, method) for req, times in response_times.items()
-    }
+    percentiles = {req: calculate_percentiles(times) for req, times in response_times.items()}
 
     return CompareInput(
         path=path,
@@ -1579,7 +1599,6 @@ Each input may be followed by --label NAME to override the column header
 
 Options:
   --percentile {50,75,95,99}  Percentile(s) to render. Repeat for multiple. Default: 50 and 95.
-  --method {exact,tdigest}    Percentile calculation method (default: exact).
   --exclude STRING            Exclude report directories containing this string (e.g. 'warmup').
   -h, --help                  Show this help.
 
@@ -1588,7 +1607,7 @@ Examples:
   gstat compare ./a --label baseline ./b --label candidate --percentile 95
   gstat compare ./run-2.41.8 --label 2.41.8 \\
                 ./run-2.42.4 --label 2.42.4 \\
-                ./run-2.43.0 --label 2.43.0 --method tdigest
+                ./run-2.43.0 --label 2.43.0
 """
 
 
@@ -1603,7 +1622,6 @@ def _main_compare(argv: list[str]) -> None:
         return
 
     inputs: list[tuple[Path, str | None]] = []
-    method = "exact"
     exclude: str | None = None
     percentile_keys: list[str] = []
 
@@ -1619,12 +1637,6 @@ def _main_compare(argv: list[str]) -> None:
                 sys.exit(2)
             path, _ = inputs[-1]
             inputs[-1] = (path, argv[i + 1])
-            i += 2
-        elif token == "--method":
-            if i + 1 >= len(argv) or argv[i + 1] not in ("exact", "tdigest"):
-                print("Error: --method requires one of: exact, tdigest", file=sys.stderr)
-                sys.exit(2)
-            method = argv[i + 1]
             i += 2
         elif token == "--exclude":
             if i + 1 >= len(argv):
@@ -1674,7 +1686,7 @@ def _main_compare(argv: list[str]) -> None:
         "99th": "99th Percentile Response Time (p99)",
     }
 
-    collected = [collect_compare_input(path, label, method, exclude) for path, label in inputs]
+    collected = [collect_compare_input(path, label, exclude) for path, label in inputs]
 
     print(format_compare_markdown(collected, fields, titles), end="")
 
@@ -1754,12 +1766,6 @@ Examples:
         "--output", "-o", type=Path, help="Output file for plot (default: show in browser)"
     )
     parser.add_argument(
-        "--method",
-        choices=["exact", "tdigest"],
-        default="exact",
-        help="Percentile calculation method (default: exact)",
-    )
-    parser.add_argument(
         "--exclude",
         type=str,
         help="Exclude directories containing this string (e.g., 'warmup')",
@@ -1780,7 +1786,7 @@ Examples:
         print(f"Path is not a directory: {args.report_directory}", file=sys.stderr)
         sys.exit(1)
 
-    gatling_data = load_gatling_data(args.report_directory, args.method, args.exclude)
+    gatling_data = load_gatling_data(args.report_directory, args.exclude)
 
     if args.plot:
         match args.plot:

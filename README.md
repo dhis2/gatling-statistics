@@ -5,10 +5,7 @@ A Python CLI tool that calculates and plots statistics like percentiles (min, 50
 
 ## Features
 
-* **Exact Percentiles**: Default method using NumPy for accurate percentile calculations
-* **T-Digest Algorithm**: Optional method using the same [T-Digest
-algorithm](https://github.com/CamDavidsonPilon/tdigest) as
-[Gatling](https://github.com/tdunning/t-digest) for compatibility
+* **Exact Percentiles**: Uses NumPy over the full sample, so results are reproducible
 * **Multiple Reports Support**: Process single reports or directories containing multiple simulation
 runs
 * **Easy Installation**: Install globally like a binary using `uv`
@@ -21,7 +18,7 @@ runs
 
 Install directly from GitHub using `uv` without needing to clone the repository:
 
-```bash
+```sh
 # Install latest release (recommended)
 uv tool install git+https://github.com/dhis2/gatling-statistics
 
@@ -34,7 +31,7 @@ uv tool install --reinstall git+https://github.com/dhis2/gatling-statistics
 
 Use the `gstat` command from anywhere. Check your installed version:
 
-```bash
+```sh
 gstat --version
 ```
 
@@ -42,7 +39,7 @@ gstat --version
 
 For development or contributing:
 
-```bash
+```sh
 # Clone and install locally
 git clone https://github.com/dhis2/gatling-statistics.git
 cd gatling-statistics
@@ -57,7 +54,7 @@ uv run gstat <report_directory>
 
 Output percentiles per simulation, run and request name as CSV
 
-```bash
+```sh
 gstat <report_directory>
 ```
 
@@ -85,44 +82,52 @@ trackerexportertests,20250627064559771,events,38,320,357,380,557,1258,1258
 trackerexportertests,20250627095400668,events,7,2138,2346,2383,3345,3345,3345
 ```
 
-### Percentile Calculation Methods
+### Percentiles
 
-Choose between exact calculation (default) or T-Digest approximation:
+`gstat` uses
+[`numpy.percentile`](https://numpy.org/doc/stable/reference/generated/numpy.percentile.html)
+with the `linear` method (numpy default, also called "type 7"). It runs over the full
+sample. Same definition as Prometheus and Grafana.
 
-```bash
-# Use exact percentile calculation (default)
-gstat <report_directory>
+Gatling uses
+[`AVLTreeDigest`](https://github.com/tdunning/t-digest) (a t-digest variant) via the
+[`com.tdunning:t-digest` dependency pinned in Gatling](https://github.com/gatling/gatling/blob/main/project/Dependencies.scala).
+t-digest is an approximation algorithm for percentiles. Its main benefit is that t-digests
+built on different machines can be merged without losing accuracy.
+[Gatling Enterprise](https://gatling.io/) uses this to combine partial results from
+distributed load generators, and OSS Gatling inherits the same code path.
 
-# Use T-Digest algorithm (approximation; does not match Gatling's numbers)
-gstat <report_directory> --method tdigest
-```
+We run on a single machine with the full sample on disk, so we gain nothing from
+mergeability and we pay two costs:
 
-#### Limitations
+* **You can't predict how wrong it will be.** There is no formula that tells you the
+maximum error of a t-digest result. How close it gets to the real percentile depends on the
+data. See the [Apache DataSketches
+notes](https://datasketches.apache.org/docs/tdigest/tdigest.html).
+* **Same input, different output.** When two response times are equally close to a t-digest
+bucket, `AVLTreeDigest` picks one at random. The randomness is not seeded, so running the
+report twice on the same input can give different p99 values (we saw up to 5 ms drift at
+n=1000). This is extra noise on top of whatever variance the system under test already has,
+and it is avoidable.
 
-Neither method reproduces Gatling's HTML report numbers. Gatling uses the Java
-[`AVLTreeDigest(compression=100)`](https://github.com/tdunning/t-digest) with separately
-tracked min/max and singleton-aware tail interpolation. `--method exact` uses
-`numpy.percentile(..., method="nearest")`; `--method tdigest` uses
-[CamDavidsonPilon/tdigest](https://github.com/CamDavidsonPilon/tdigest), a different t-digest
-variant with different tail behavior. No maintained Python port of Gatling's t-digest exists.
-Typical deltas on small samples are a few ms; use `gstat` for run-to-run comparisons, not to
-reproduce the HTML table.
+Because of this `gstat` numbers will not exactly match the Gatling HTML table. That is on
+purpose.
 
 ### Comparing runs
 
 Generate a Markdown comparison table across two or more runs (first input is the baseline,
 deltas are computed against it):
 
-```bash
+```sh
 # Two-run baseline vs candidate
 gstat compare ./baseline ./candidate
 
-# Three-run release-note style
+# Three runs compared
 gstat compare \
   ./run-2.41.8 --label 2.41.8 \
   ./run-2.42.4 --label 2.42.4 \
   ./run-2.43.0 --label 2.43.0 \
-  --percentile 95 --method tdigest
+  --percentile 95
 ```
 
 Output is one Markdown table per percentile (default p50 and p95) with `Diff` and `Change`
@@ -133,15 +138,12 @@ to skip, pass `--exclude warmup`.
 
 Generate interactive HTML plots instead of CSV output:
 
-```bash
+```sh
 # Generate plot and open in browser
 gstat ../samples/ --plot
 
 # Save plot to file
 gstat ../samples/ --plot --output plot.html
-
-# Combine with method selection
-gstat ../samples/ --plot --method tdigest
 ```
 
 ### Directory Structure
@@ -189,7 +191,7 @@ source ~/.zshrc
 
 ### For bash
 
-```bash
+```sh
 # Register gstat for autocompletion
 echo 'eval "$(register-python-argcomplete gstat)"' >> ~/.bashrc
 
@@ -201,13 +203,12 @@ source ~/.bashrc
 
 For system-wide completion of all Python CLI tools with argcomplete support:
 
-```bash
+```sh
 activate-global-python-argcomplete --user
 ```
 
 After setup, you'll get autocompletion for:
-* Command options: `gstat --<TAB>` → `--plot`, `--output`, `--method`, `--help`
-* Method values: `gstat --method <TAB>` → `exact`, `tdigest`
+* Command options: `gstat --<TAB>` → `--plot`, `--output`, `--help`
 * Plot types: `gstat --plot <TAB>` → `distribution`, `stacked`, `scatter`
 * File/directory path completion for report directories
 
@@ -215,7 +216,7 @@ After setup, you'll get autocompletion for:
 
 ### Setup
 
-```bash
+```sh
 # Install Python 3.13 and create virtual environment
 uv sync
 
@@ -225,15 +226,15 @@ uv run pre-commit install
 
 ### Development Commands
 
-```bash
+```sh
 # Run the tool locally
 uv run gstat <report_directory>
 
 # Run tests
-uv run python test_trace_mapping.py
+uv run python tests/test_gstat.py
 
 # Run tests with verbose output
-uv run python test_trace_mapping.py -v
+uv run python tests/test_gstat.py -v
 
 # Format code with ruff
 uv run ruff format .
@@ -267,7 +268,7 @@ generated at build/install time from git tags in format `v0.1.0` and can be chec
 
 Use the interactive release script:
 
-```bash
+```sh
 ./scripts/release.sh
 ```
 
