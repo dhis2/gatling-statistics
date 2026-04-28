@@ -1,0 +1,6 @@
+record_type,scenario_name,group_hierarchy,request_name,status,start_timestamp,end_timestamp,response_time_ms,error_message,event_type,duration_ms,cumulated_response_time_ms,is_incoming
+request,,,Login,OK,1776420960646,1776420960748,102,,,,,false
+request,,,Login,OK,1776420960797,1776420960895,98,,,,,false
+request,,,Login,OK,1776420960965,1776420961062,97,,,,,false
+request,,,Login,OK,1776420961133,1776420961243,110,,,,,false
+request,,,Login,OK,1776420961299,1776420961425,126,,,,,false

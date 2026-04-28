@@ -23,15 +23,11 @@ from gstat import (
     plot_percentiles_stacked,
 )
 
-FIXTURE_DIR = (
-    Path(__file__).parent / "fixtures" / "trackertest-20260424071214792-2.43.0-smoke-1u-1000req"
-)
-WARMUP_FIXTURE_DIR = (
-    Path(__file__).parent
-    / "fixtures"
-    / "trackertest-20260424070546336-2.43.0-smoke-1u-1000req-warmup-1"
-)
-FIXTURES_PARENT = Path(__file__).parent / "fixtures"
+FIXTURES_ROOT = Path(__file__).parent / "fixtures"
+FLAT_MULTI = FIXTURES_ROOT / "flat-multi"
+FIXTURE_DIR = FLAT_MULTI / "trackertest-20260424071214792-2.43.0-smoke-1u-1000req"
+WARMUP_FIXTURE_DIR = FLAT_MULTI / "trackertest-20260424070546336-2.43.0-smoke-1u-1000req-warmup-1"
+FIXTURES_PARENT = FLAT_MULTI
 
 
 class TestTraceMapping(unittest.TestCase):
@@ -312,29 +308,29 @@ class TestPercentilesOutput(unittest.TestCase):
     # the combined p99 below is 58 (computed over 2000 samples), not 68.5 (average).
     COMBINED_OUTPUT_BOTH_RUNS = """\
 directory,simulation,request_name,count,ok_count,ko_count,min,50th,75th,95th,99th,max
-fixtures,trackertest,Get ANC events / Get one event / Get first event,200,200,0,13,15,16,42,67,99
-fixtures,trackertest,Get ANC events / Get one event / Get relationships for first event,200,200,0,2,3,3,4,6,39
-fixtures,trackertest,Get ANC events / Go to first page,200,200,0,9,87,147,150,159,2837
-fixtures,trackertest,Get ANC events / Go to second page,200,200,0,10,87,147,150,159,2723
-fixtures,trackertest,Get ANC events / Search not assigned,200,200,0,9,91,147,151,158,169
-fixtures,trackertest,Get ANC events / Search by date range,200,200,0,10,356,693,703,714,717
-fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get first event from enrollment,200,200,0,20,21,22,25,29,41
-fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get relationships for first event,200,200,0,2,3,4,5,8,17
-fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get first tracked entity,200,200,0,16,17,18,28,34,39
-fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get first enrollment,200,200,0,7,8,9,19,26,35
-fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get relationships for first tracked entity,200,200,0,3,4,4,5,7,15
-fixtures,trackertest,Get Child Programme TEs / Not found TE by name with like operator,200,200,0,52,68,69,71,81,155
-fixtures,trackertest,Get Child Programme TEs / Not found TE by name with eq operator,200,200,0,3,4,5,6,7,9
-fixtures,trackertest,Get Child Programme TEs / Search TE by name with like operator,200,200,0,65,111,113,118,137,146
-fixtures,trackertest,Get Child Programme TEs / Search TE by name with eq operator,200,200,0,14,15,16,25,38,51
-fixtures,trackertest,Get Child Programme TEs / Search Birth events,200,200,0,56,664,1286,1296,1318,1900
-fixtures,trackertest,Get Child Programme TEs / Get TEs from events,200,200,0,5,6,6,9,11,16
-fixtures,trackertest,Get Child Programme TEs / Get first page of TEs,200,200,0,19,68,104,108,112,114
-fixtures,trackertest,Get Child Programme TEs / Get TEs with enrollment status,200,200,0,75,127,129,133,140,155
-fixtures,trackertest,Login,10,10,0,92,98,105,141,159,163
-fixtures,trackertest,MNCH import,2000,2000,0,56,96,106,129,220,1296
-fixtures,trackertest,Child Programme import,2000,2000,0,65,68,71,76,86,338
-fixtures,trackertest,ANC import,2000,2000,0,33,36,38,44,58,587
+flat-multi,trackertest,Get ANC events / Get one event / Get first event,200,200,0,13,15,16,42,67,99
+flat-multi,trackertest,Get ANC events / Get one event / Get relationships for first event,200,200,0,2,3,3,4,6,39
+flat-multi,trackertest,Get ANC events / Go to first page,200,200,0,9,87,147,150,159,2837
+flat-multi,trackertest,Get ANC events / Go to second page,200,200,0,10,87,147,150,159,2723
+flat-multi,trackertest,Get ANC events / Search not assigned,200,200,0,9,91,147,151,158,169
+flat-multi,trackertest,Get ANC events / Search by date range,200,200,0,10,356,693,703,714,717
+flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get first event from enrollment,200,200,0,20,21,22,25,29,41
+flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get relationships for first event,200,200,0,2,3,4,5,8,17
+flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get first tracked entity,200,200,0,16,17,18,28,34,39
+flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get first enrollment,200,200,0,7,8,9,19,26,35
+flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get relationships for first tracked entity,200,200,0,3,4,4,5,7,15
+flat-multi,trackertest,Get Child Programme TEs / Not found TE by name with like operator,200,200,0,52,68,69,71,81,155
+flat-multi,trackertest,Get Child Programme TEs / Not found TE by name with eq operator,200,200,0,3,4,5,6,7,9
+flat-multi,trackertest,Get Child Programme TEs / Search TE by name with like operator,200,200,0,65,111,113,118,137,146
+flat-multi,trackertest,Get Child Programme TEs / Search TE by name with eq operator,200,200,0,14,15,16,25,38,51
+flat-multi,trackertest,Get Child Programme TEs / Search Birth events,200,200,0,56,664,1286,1296,1318,1900
+flat-multi,trackertest,Get Child Programme TEs / Get TEs from events,200,200,0,5,6,6,9,11,16
+flat-multi,trackertest,Get Child Programme TEs / Get first page of TEs,200,200,0,19,68,104,108,112,114
+flat-multi,trackertest,Get Child Programme TEs / Get TEs with enrollment status,200,200,0,75,127,129,133,140,155
+flat-multi,trackertest,Login,10,10,0,92,98,105,141,159,163
+flat-multi,trackertest,MNCH import,2000,2000,0,56,96,106,129,220,1296
+flat-multi,trackertest,Child Programme import,2000,2000,0,65,68,71,76,86,338
+flat-multi,trackertest,ANC import,2000,2000,0,33,36,38,44,58,587
 """
 
     # Snapshot of `gstat --combine --exclude warmup ./tests/fixtures/`. With warmup
@@ -342,29 +338,29 @@ fixtures,trackertest,ANC import,2000,2000,0,33,36,38,44,58,587
     # per-run output emits for the main fixture alone.
     COMBINED_OUTPUT_MAIN_ONLY = """\
 directory,simulation,request_name,count,ok_count,ko_count,min,50th,75th,95th,99th,max
-fixtures,trackertest,Get ANC events / Get one event / Get first event,100,100,0,13,14,15,40,53,67
-fixtures,trackertest,Get ANC events / Get one event / Get relationships for first event,100,100,0,2,3,3,3,4,7
-fixtures,trackertest,Get ANC events / Go to first page,100,100,0,9,147,148,151,159,165
-fixtures,trackertest,Get ANC events / Go to second page,100,100,0,10,147,148,153,159,161
-fixtures,trackertest,Get ANC events / Search not assigned,100,100,0,9,147,148,153,159,169
-fixtures,trackertest,Get ANC events / Search by date range,100,100,0,10,693,695,709,715,717
-fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get first event from enrollment,100,100,0,20,21,22,23,26,27
-fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get relationships for first event,100,100,0,2,3,3,4,5,8
-fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get first tracked entity,100,100,0,16,17,17,19,26,27
-fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get first enrollment,100,100,0,7,8,9,18,26,26
-fixtures,trackertest,Get Child Programme TEs / Go to single enrollment / Get relationships for first tracked entity,100,100,0,3,4,4,4,5,7
-fixtures,trackertest,Get Child Programme TEs / Not found TE by name with like operator,100,100,0,67,69,70,75,81,108
-fixtures,trackertest,Get Child Programme TEs / Not found TE by name with eq operator,100,100,0,3,4,4,6,6,7
-fixtures,trackertest,Get Child Programme TEs / Search TE by name with like operator,100,100,0,111,113,114,122,137,146
-fixtures,trackertest,Get Child Programme TEs / Search TE by name with eq operator,100,100,0,14,15,15,17,26,29
-fixtures,trackertest,Get Child Programme TEs / Search Birth events,100,100,0,86,1286,1290,1302,1321,1900
-fixtures,trackertest,Get Child Programme TEs / Get TEs from events,100,100,0,5,6,6,7,8,9
-fixtures,trackertest,Get Child Programme TEs / Get first page of TEs,100,100,0,19,104,105,109,114,114
-fixtures,trackertest,Get Child Programme TEs / Get TEs with enrollment status,100,100,0,127,129,130,134,140,144
-fixtures,trackertest,Login,5,5,0,94,98,99,111,113,114
-fixtures,trackertest,MNCH import,1000,1000,0,56,94,103,119,174,626
-fixtures,trackertest,Child Programme import,1000,1000,0,65,68,70,75,84,251
-fixtures,trackertest,ANC import,1000,1000,0,33,36,38,43,87,587
+flat-multi,trackertest,Get ANC events / Get one event / Get first event,100,100,0,13,14,15,40,53,67
+flat-multi,trackertest,Get ANC events / Get one event / Get relationships for first event,100,100,0,2,3,3,3,4,7
+flat-multi,trackertest,Get ANC events / Go to first page,100,100,0,9,147,148,151,159,165
+flat-multi,trackertest,Get ANC events / Go to second page,100,100,0,10,147,148,153,159,161
+flat-multi,trackertest,Get ANC events / Search not assigned,100,100,0,9,147,148,153,159,169
+flat-multi,trackertest,Get ANC events / Search by date range,100,100,0,10,693,695,709,715,717
+flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get first event from enrollment,100,100,0,20,21,22,23,26,27
+flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get relationships for first event,100,100,0,2,3,3,4,5,8
+flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get first tracked entity,100,100,0,16,17,17,19,26,27
+flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get first enrollment,100,100,0,7,8,9,18,26,26
+flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get relationships for first tracked entity,100,100,0,3,4,4,4,5,7
+flat-multi,trackertest,Get Child Programme TEs / Not found TE by name with like operator,100,100,0,67,69,70,75,81,108
+flat-multi,trackertest,Get Child Programme TEs / Not found TE by name with eq operator,100,100,0,3,4,4,6,6,7
+flat-multi,trackertest,Get Child Programme TEs / Search TE by name with like operator,100,100,0,111,113,114,122,137,146
+flat-multi,trackertest,Get Child Programme TEs / Search TE by name with eq operator,100,100,0,14,15,15,17,26,29
+flat-multi,trackertest,Get Child Programme TEs / Search Birth events,100,100,0,86,1286,1290,1302,1321,1900
+flat-multi,trackertest,Get Child Programme TEs / Get TEs from events,100,100,0,5,6,6,7,8,9
+flat-multi,trackertest,Get Child Programme TEs / Get first page of TEs,100,100,0,19,104,105,109,114,114
+flat-multi,trackertest,Get Child Programme TEs / Get TEs with enrollment status,100,100,0,127,129,130,134,140,144
+flat-multi,trackertest,Login,5,5,0,94,98,99,111,113,114
+flat-multi,trackertest,MNCH import,1000,1000,0,56,94,103,119,174,626
+flat-multi,trackertest,Child Programme import,1000,1000,0,65,68,70,75,84,251
+flat-multi,trackertest,ANC import,1000,1000,0,33,36,38,43,87,587
 """
 
     @staticmethod
