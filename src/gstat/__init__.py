@@ -1462,8 +1462,13 @@ class CompareInput(NamedTuple):
     ok_ko_counts: dict[str, tuple[int, int]]  # {request_name: (ok_count, ko_count)}
 
 
-class GatlingCombinedRequest(NamedTuple):
-    """Per-request data combined across all simulations and runs of one input."""
+@dataclass(slots=True)
+class GatlingCombinedRequest:
+    """Per-request data combined across all simulations and runs of one input.
+
+    Mutable accumulator: combine_request_data extends `response_times` and
+    increments the counts in place as it walks the runs.
+    """
 
     response_times: list[float]
     ok_count: int
@@ -1483,19 +1488,17 @@ def combine_request_data(gatling_data: GatlingRuns) -> dict[str, GatlingCombined
                 rd = gatling_data.get_request(simulation, run_timestamp, request_name)
                 if rd is None:
                     continue
-                prev = combined.get(request_name)
-                if prev is None:
+                acc = combined.get(request_name)
+                if acc is None:
                     combined[request_name] = GatlingCombinedRequest(
                         response_times=list(rd.response_times),
                         ok_count=rd.ok_count,
                         ko_count=rd.ko_count,
                     )
                 else:
-                    prev.response_times.extend(rd.response_times)
-                    combined[request_name] = prev._replace(
-                        ok_count=prev.ok_count + rd.ok_count,
-                        ko_count=prev.ko_count + rd.ko_count,
-                    )
+                    acc.response_times.extend(rd.response_times)
+                    acc.ok_count += rd.ok_count
+                    acc.ko_count += rd.ko_count
     return combined
 
 
