@@ -673,7 +673,6 @@ def _load_single_directory(directory: Path) -> tuple[str, str, GatlingRun] | Non
     df = parse_simulation_csv(simulation_csv)
 
     # Iterate in Gatling HTML report order. See order_requests_gatling_html.
-    df = df.copy()
     df["group_hierarchy"] = df["group_hierarchy"].fillna("")
     ordered_keys = order_requests_gatling_html(df)
     groups = dict(list(df.groupby(["group_hierarchy", "request_name"], sort=False)))
