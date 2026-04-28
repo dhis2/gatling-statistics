@@ -6,6 +6,7 @@ Calculate statistics like percentiles from Gatling simulation.csv files.
 """
 
 import argparse
+import csv
 import re
 import sys
 from collections import OrderedDict
@@ -1637,9 +1638,23 @@ def format_compare_markdown(
 
 def format_output(gatling_data: GatlingRuns) -> None:
     """Format and print results as CSV."""
-    print(
-        "directory,simulation,run_timestamp,request_name,"
-        "count,ok_count,ko_count,min,50th,75th,95th,99th,max"
+    writer = csv.writer(sys.stdout, lineterminator="\n")
+    writer.writerow(
+        [
+            "directory",
+            "simulation",
+            "run_timestamp",
+            "request_name",
+            "count",
+            "ok_count",
+            "ko_count",
+            "min",
+            "50th",
+            "75th",
+            "95th",
+            "99th",
+            "max",
+        ]
     )
 
     for simulation in gatling_data.get_simulations():
@@ -1647,17 +1662,23 @@ def format_output(gatling_data: GatlingRuns) -> None:
             run_data = gatling_data.get_run(simulation, run_timestamp)
             if run_data:
                 for request_name, request_data in run_data.requests.items():
-                    directory = run_data.directory.name
-
-                    print(
-                        f"{directory},{simulation},{run_data.formatted_timestamp},{request_name},"
-                        f"{request_data.count},{request_data.ok_count},{request_data.ko_count},"
-                        f"{request_data.percentiles['min']:.0f},"
-                        f"{request_data.percentiles['50th']:.0f},"
-                        f"{request_data.percentiles['75th']:.0f},"
-                        f"{request_data.percentiles['95th']:.0f},"
-                        f"{request_data.percentiles['99th']:.0f},"
-                        f"{request_data.percentiles['max']:.0f}"
+                    p = request_data.percentiles
+                    writer.writerow(
+                        [
+                            run_data.directory.name,
+                            simulation,
+                            run_data.formatted_timestamp,
+                            request_name,
+                            request_data.count,
+                            request_data.ok_count,
+                            request_data.ko_count,
+                            f"{p['min']:.0f}",
+                            f"{p['50th']:.0f}",
+                            f"{p['75th']:.0f}",
+                            f"{p['95th']:.0f}",
+                            f"{p['99th']:.0f}",
+                            f"{p['max']:.0f}",
+                        ]
                     )
 
 
@@ -1669,7 +1690,23 @@ def format_output_combined(gatling_data: GatlingRuns) -> None:
     per-run output: no `run_timestamp` column, `directory` is the input the user
     passed, `count` is the total sample count.
     """
-    print("directory,simulation,request_name,count,ok_count,ko_count,min,50th,75th,95th,99th,max")
+    writer = csv.writer(sys.stdout, lineterminator="\n")
+    writer.writerow(
+        [
+            "directory",
+            "simulation",
+            "request_name",
+            "count",
+            "ok_count",
+            "ko_count",
+            "min",
+            "50th",
+            "75th",
+            "95th",
+            "99th",
+            "max",
+        ]
+    )
 
     combined = combine_request_data(gatling_data)
     if not combined:
@@ -1680,16 +1717,22 @@ def format_output_combined(gatling_data: GatlingRuns) -> None:
     directory = gatling_data.report_directory.name if gatling_data.report_directory else ""
 
     for request_name, c in combined.items():
-        percentiles = calculate_percentiles(c.response_times)
-        print(
-            f"{directory},{simulation},{request_name},"
-            f"{len(c.response_times)},{c.ok_count},{c.ko_count},"
-            f"{percentiles['min']:.0f},"
-            f"{percentiles['50th']:.0f},"
-            f"{percentiles['75th']:.0f},"
-            f"{percentiles['95th']:.0f},"
-            f"{percentiles['99th']:.0f},"
-            f"{percentiles['max']:.0f}"
+        p = calculate_percentiles(c.response_times)
+        writer.writerow(
+            [
+                directory,
+                simulation,
+                request_name,
+                len(c.response_times),
+                c.ok_count,
+                c.ko_count,
+                f"{p['min']:.0f}",
+                f"{p['50th']:.0f}",
+                f"{p['75th']:.0f}",
+                f"{p['95th']:.0f}",
+                f"{p['99th']:.0f}",
+                f"{p['max']:.0f}",
+            ]
         )
 
 
