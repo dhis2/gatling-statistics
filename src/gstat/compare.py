@@ -16,6 +16,7 @@ class CompareInput(NamedTuple):
     label: str
     percentiles: dict[str, dict[str, float]]  # {request_name: {percentile_key: value}}
     ok_ko_counts: dict[str, tuple[int, int]]  # {request_name: (ok_count, ko_count)}
+    req_per_sec: dict[str, float]  # {request_name: throughput}
 
 
 @dataclass(slots=True)
@@ -24,11 +25,24 @@ class GatlingCombinedRequest:
 
     Mutable accumulator: combine_request_data extends `response_times` and
     increments the counts in place as it walks the runs.
+
+    `duration_seconds` is the sum of the per-run measured windows for every run
+    that contributed to this request. Summing (rather than max-end - min-start
+    across runs) is the right denominator for throughput because runs are not
+    contiguous in wall-clock time: a 5-minute warmup followed by a 10-minute
+    main run is 15 minutes of "active load", not whatever gap separates the two.
     """
 
     response_times: list[float]
     ok_count: int
     ko_count: int
+    duration_seconds: float
+
+    @property
+    def req_per_sec(self) -> float:
+        if self.duration_seconds <= 0:
+            return 0.0
+        return len(self.response_times) / self.duration_seconds
 
 
 def combine_request_data(gatling_data: GatlingRuns) -> dict[str, GatlingCombinedRequest]:
@@ -40,8 +54,11 @@ def combine_request_data(gatling_data: GatlingRuns) -> dict[str, GatlingCombined
     combined: dict[str, GatlingCombinedRequest] = {}
     for simulation in gatling_data.get_simulations():
         for run_timestamp in gatling_data.get_run_timestamps(simulation):
+            run = gatling_data.get_run(simulation, run_timestamp)
+            if run is None:
+                continue
             for request_name in gatling_data.get_requests(simulation, run_timestamp):
-                rd = gatling_data.get_request(simulation, run_timestamp, request_name)
+                rd = run.requests.get(request_name)
                 if rd is None:
                     continue
                 acc = combined.get(request_name)
@@ -50,11 +67,13 @@ def combine_request_data(gatling_data: GatlingRuns) -> dict[str, GatlingCombined
                         response_times=list(rd.response_times),
                         ok_count=rd.ok_count,
                         ko_count=rd.ko_count,
+                        duration_seconds=run.duration_seconds,
                     )
                 else:
                     acc.response_times.extend(rd.response_times)
                     acc.ok_count += rd.ok_count
                     acc.ko_count += rd.ko_count
+                    acc.duration_seconds += run.duration_seconds
     return combined
 
 
@@ -69,12 +88,14 @@ def collect_compare_input(path: Path, label: str | None, exclude: str | None) ->
     combined = combine_request_data(gatling_data)
     percentiles = {req: calculate_percentiles(c.response_times) for req, c in combined.items()}
     ok_ko_counts = {req: (c.ok_count, c.ko_count) for req, c in combined.items()}
+    req_per_sec = {req: c.req_per_sec for req, c in combined.items()}
 
     return CompareInput(
         path=path,
         label=label or path.resolve().name,
         percentiles=percentiles,
         ok_ko_counts=ok_ko_counts,
+        req_per_sec=req_per_sec,
     )
 
 
@@ -139,15 +160,22 @@ def format_compare_markdown(
             return "-"
         return f"{(ko / total) * 100:.1f}%"
 
+    def rps_cell(inp: CompareInput, req: str) -> str:
+        rps = inp.req_per_sec.get(req)
+        if rps is None:
+            return "-"
+        return f"{rps:.2f}"
+
     for pkey in percentile_keys:
         title = percentile_titles[pkey]
 
-        # Header
-        header_cells = ["Scenario", baseline.label, "KO%"]
-        align_cells = [":---", "---:", "---:"]
+        # Header. For each input, render value | req/s | KO% so throughput sits
+        # next to the percentile it describes (matches the release-note shape).
+        header_cells = ["Scenario", baseline.label, "req/s", "KO%"]
+        align_cells = [":---", "---:", "---:", "---:"]
         for other in others:
-            header_cells.extend([other.label, "KO%"])
-            align_cells.extend(["---:", "---:"])
+            header_cells.extend([other.label, "req/s", "KO%"])
+            align_cells.extend(["---:", "---:", "---:"])
             if show_diff:
                 header_cells.append("Diff")
                 align_cells.append("---:")
@@ -165,10 +193,12 @@ def format_compare_markdown(
             bval = baseline.percentiles.get(req, {}).get(pkey)
             row = [req]
             row.append("-" if bval is None else f"{bval:,.0f}")
+            row.append(rps_cell(baseline, req))
             row.append(ko_pct_cell(baseline, req))
             for other in others:
                 oval = other.percentiles.get(req, {}).get(pkey)
                 row.append("-" if oval is None else f"{oval:,.0f}")
+                row.append(rps_cell(other, req))
                 row.append(ko_pct_cell(other, req))
                 if oval is None or bval is None:
                     if show_diff:
@@ -206,6 +236,7 @@ def format_output(gatling_data: GatlingRuns) -> None:
             "count",
             "ok_count",
             "ko_count",
+            "req_per_sec",
             "min",
             "50th",
             "75th",
@@ -230,6 +261,7 @@ def format_output(gatling_data: GatlingRuns) -> None:
                             request_data.count,
                             request_data.ok_count,
                             request_data.ko_count,
+                            f"{request_data.req_per_sec:.2f}",
                             f"{p['min']:.0f}",
                             f"{p['50th']:.0f}",
                             f"{p['75th']:.0f}",
@@ -257,6 +289,7 @@ def format_output_combined(gatling_data: GatlingRuns) -> None:
             "count",
             "ok_count",
             "ko_count",
+            "req_per_sec",
             "min",
             "50th",
             "75th",
@@ -284,6 +317,7 @@ def format_output_combined(gatling_data: GatlingRuns) -> None:
                 len(c.response_times),
                 c.ok_count,
                 c.ko_count,
+                f"{c.req_per_sec:.2f}",
                 f"{p['min']:.0f}",
                 f"{p['50th']:.0f}",
                 f"{p['75th']:.0f}",

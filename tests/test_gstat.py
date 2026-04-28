@@ -31,6 +31,14 @@ FIXTURE_DIR = FLAT_MULTI / "trackertest-20260424071214792-2.43.0-smoke-1u-1000re
 WARMUP_FIXTURE_DIR = FLAT_MULTI / "trackertest-20260424070546336-2.43.0-smoke-1u-1000req-warmup-1"
 FIXTURES_PARENT = FLAT_MULTI
 
+# Real Gatling export run with mixed OK/KO requests. Used as a parity check
+# against Gatling's own HTML statistics table (see TestReqPerSecGatlingParity).
+WITH_KO_FIXTURE_DIR = (
+    FIXTURES_ROOT
+    / "with-ko"
+    / "trackertest-20260420131959836-DHIS2-20965-export-2.42.4-4users-300s"
+)
+
 
 class TestTraceMapping(unittest.TestCase):
     """Stacked-plot dropdown wiring: trace indices must be contiguous, non-overlapping,
@@ -418,60 +426,60 @@ class TestPercentilesOutput(unittest.TestCase):
     # "average per-run percentiles": e.g. ANC import warmup p99=50, main p99=87, but
     # the combined p99 below is 58 (computed over 2000 samples), not 68.5 (average).
     COMBINED_OUTPUT_BOTH_RUNS = """\
-directory,simulation,request_name,count,ok_count,ko_count,min,50th,75th,95th,99th,max
-flat-multi,trackertest,Get ANC events / Get one event / Get first event,200,200,0,13,15,16,42,67,99
-flat-multi,trackertest,Get ANC events / Get one event / Get relationships for first event,200,200,0,2,3,3,4,6,39
-flat-multi,trackertest,Get ANC events / Go to first page,200,200,0,9,87,147,150,159,2837
-flat-multi,trackertest,Get ANC events / Go to second page,200,200,0,10,87,147,150,159,2723
-flat-multi,trackertest,Get ANC events / Search not assigned,200,200,0,9,91,147,151,158,169
-flat-multi,trackertest,Get ANC events / Search by date range,200,200,0,10,356,693,703,714,717
-flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get first event from enrollment,200,200,0,20,21,22,25,29,41
-flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get relationships for first event,200,200,0,2,3,4,5,8,17
-flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get first tracked entity,200,200,0,16,17,18,28,34,39
-flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get first enrollment,200,200,0,7,8,9,19,26,35
-flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get relationships for first tracked entity,200,200,0,3,4,4,5,7,15
-flat-multi,trackertest,Get Child Programme TEs / Not found TE by name with like operator,200,200,0,52,68,69,71,81,155
-flat-multi,trackertest,Get Child Programme TEs / Not found TE by name with eq operator,200,200,0,3,4,5,6,7,9
-flat-multi,trackertest,Get Child Programme TEs / Search TE by name with like operator,200,200,0,65,111,113,118,137,146
-flat-multi,trackertest,Get Child Programme TEs / Search TE by name with eq operator,200,200,0,14,15,16,25,38,51
-flat-multi,trackertest,Get Child Programme TEs / Search Birth events,200,200,0,56,664,1286,1296,1318,1900
-flat-multi,trackertest,Get Child Programme TEs / Get TEs from events,200,200,0,5,6,6,9,11,16
-flat-multi,trackertest,Get Child Programme TEs / Get first page of TEs,200,200,0,19,68,104,108,112,114
-flat-multi,trackertest,Get Child Programme TEs / Get TEs with enrollment status,200,200,0,75,127,129,133,140,155
-flat-multi,trackertest,Login,10,10,0,92,98,105,141,159,163
-flat-multi,trackertest,MNCH import,2000,2000,0,56,96,106,129,220,1296
-flat-multi,trackertest,Child Programme import,2000,2000,0,65,68,71,76,86,338
-flat-multi,trackertest,ANC import,2000,2000,0,33,36,38,44,58,587
+directory,simulation,request_name,count,ok_count,ko_count,req_per_sec,min,50th,75th,95th,99th,max
+flat-multi,trackertest,Get ANC events / Get one event / Get first event,200,200,0,0.23,13,15,16,42,67,99
+flat-multi,trackertest,Get ANC events / Get one event / Get relationships for first event,200,200,0,0.23,2,3,3,4,6,39
+flat-multi,trackertest,Get ANC events / Go to first page,200,200,0,0.23,9,87,147,150,159,2837
+flat-multi,trackertest,Get ANC events / Go to second page,200,200,0,0.23,10,87,147,150,159,2723
+flat-multi,trackertest,Get ANC events / Search not assigned,200,200,0,0.23,9,91,147,151,158,169
+flat-multi,trackertest,Get ANC events / Search by date range,200,200,0,0.23,10,356,693,703,714,717
+flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get first event from enrollment,200,200,0,0.23,20,21,22,25,29,41
+flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get relationships for first event,200,200,0,0.23,2,3,4,5,8,17
+flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get first tracked entity,200,200,0,0.23,16,17,18,28,34,39
+flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get first enrollment,200,200,0,0.23,7,8,9,19,26,35
+flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get relationships for first tracked entity,200,200,0,0.23,3,4,4,5,7,15
+flat-multi,trackertest,Get Child Programme TEs / Not found TE by name with like operator,200,200,0,0.23,52,68,69,71,81,155
+flat-multi,trackertest,Get Child Programme TEs / Not found TE by name with eq operator,200,200,0,0.23,3,4,5,6,7,9
+flat-multi,trackertest,Get Child Programme TEs / Search TE by name with like operator,200,200,0,0.23,65,111,113,118,137,146
+flat-multi,trackertest,Get Child Programme TEs / Search TE by name with eq operator,200,200,0,0.23,14,15,16,25,38,51
+flat-multi,trackertest,Get Child Programme TEs / Search Birth events,200,200,0,0.23,56,664,1286,1296,1318,1900
+flat-multi,trackertest,Get Child Programme TEs / Get TEs from events,200,200,0,0.23,5,6,6,9,11,16
+flat-multi,trackertest,Get Child Programme TEs / Get first page of TEs,200,200,0,0.23,19,68,104,108,112,114
+flat-multi,trackertest,Get Child Programme TEs / Get TEs with enrollment status,200,200,0,0.23,75,127,129,133,140,155
+flat-multi,trackertest,Login,10,10,0,0.01,92,98,105,141,159,163
+flat-multi,trackertest,MNCH import,2000,2000,0,2.31,56,96,106,129,220,1296
+flat-multi,trackertest,Child Programme import,2000,2000,0,2.31,65,68,71,76,86,338
+flat-multi,trackertest,ANC import,2000,2000,0,2.31,33,36,38,44,58,587
 """
 
     # Snapshot of `gstat --combine --exclude warmup ./tests/fixtures/`. With warmup
     # dropped, only the main run survives, so `count` and percentiles match what the
     # per-run output emits for the main fixture alone.
     COMBINED_OUTPUT_MAIN_ONLY = """\
-directory,simulation,request_name,count,ok_count,ko_count,min,50th,75th,95th,99th,max
-flat-multi,trackertest,Get ANC events / Get one event / Get first event,100,100,0,13,14,15,40,53,67
-flat-multi,trackertest,Get ANC events / Get one event / Get relationships for first event,100,100,0,2,3,3,3,4,7
-flat-multi,trackertest,Get ANC events / Go to first page,100,100,0,9,147,148,151,159,165
-flat-multi,trackertest,Get ANC events / Go to second page,100,100,0,10,147,148,153,159,161
-flat-multi,trackertest,Get ANC events / Search not assigned,100,100,0,9,147,148,153,159,169
-flat-multi,trackertest,Get ANC events / Search by date range,100,100,0,10,693,695,709,715,717
-flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get first event from enrollment,100,100,0,20,21,22,23,26,27
-flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get relationships for first event,100,100,0,2,3,3,4,5,8
-flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get first tracked entity,100,100,0,16,17,17,19,26,27
-flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get first enrollment,100,100,0,7,8,9,18,26,26
-flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get relationships for first tracked entity,100,100,0,3,4,4,4,5,7
-flat-multi,trackertest,Get Child Programme TEs / Not found TE by name with like operator,100,100,0,67,69,70,75,81,108
-flat-multi,trackertest,Get Child Programme TEs / Not found TE by name with eq operator,100,100,0,3,4,4,6,6,7
-flat-multi,trackertest,Get Child Programme TEs / Search TE by name with like operator,100,100,0,111,113,114,122,137,146
-flat-multi,trackertest,Get Child Programme TEs / Search TE by name with eq operator,100,100,0,14,15,15,17,26,29
-flat-multi,trackertest,Get Child Programme TEs / Search Birth events,100,100,0,86,1286,1290,1302,1321,1900
-flat-multi,trackertest,Get Child Programme TEs / Get TEs from events,100,100,0,5,6,6,7,8,9
-flat-multi,trackertest,Get Child Programme TEs / Get first page of TEs,100,100,0,19,104,105,109,114,114
-flat-multi,trackertest,Get Child Programme TEs / Get TEs with enrollment status,100,100,0,127,129,130,134,140,144
-flat-multi,trackertest,Login,5,5,0,94,98,99,111,113,114
-flat-multi,trackertest,MNCH import,1000,1000,0,56,94,103,119,174,626
-flat-multi,trackertest,Child Programme import,1000,1000,0,65,68,70,75,84,251
-flat-multi,trackertest,ANC import,1000,1000,0,33,36,38,43,87,587
+directory,simulation,request_name,count,ok_count,ko_count,req_per_sec,min,50th,75th,95th,99th,max
+flat-multi,trackertest,Get ANC events / Get one event / Get first event,100,100,0,0.21,13,14,15,40,53,67
+flat-multi,trackertest,Get ANC events / Get one event / Get relationships for first event,100,100,0,0.21,2,3,3,3,4,7
+flat-multi,trackertest,Get ANC events / Go to first page,100,100,0,0.21,9,147,148,151,159,165
+flat-multi,trackertest,Get ANC events / Go to second page,100,100,0,0.21,10,147,148,153,159,161
+flat-multi,trackertest,Get ANC events / Search not assigned,100,100,0,0.21,9,147,148,153,159,169
+flat-multi,trackertest,Get ANC events / Search by date range,100,100,0,0.21,10,693,695,709,715,717
+flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get first event from enrollment,100,100,0,0.21,20,21,22,23,26,27
+flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get one event / Get relationships for first event,100,100,0,0.21,2,3,3,4,5,8
+flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get first tracked entity,100,100,0,0.21,16,17,17,19,26,27
+flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get first enrollment,100,100,0,0.21,7,8,9,18,26,26
+flat-multi,trackertest,Get Child Programme TEs / Go to single enrollment / Get relationships for first tracked entity,100,100,0,0.21,3,4,4,4,5,7
+flat-multi,trackertest,Get Child Programme TEs / Not found TE by name with like operator,100,100,0,0.21,67,69,70,75,81,108
+flat-multi,trackertest,Get Child Programme TEs / Not found TE by name with eq operator,100,100,0,0.21,3,4,4,6,6,7
+flat-multi,trackertest,Get Child Programme TEs / Search TE by name with like operator,100,100,0,0.21,111,113,114,122,137,146
+flat-multi,trackertest,Get Child Programme TEs / Search TE by name with eq operator,100,100,0,0.21,14,15,15,17,26,29
+flat-multi,trackertest,Get Child Programme TEs / Search Birth events,100,100,0,0.21,86,1286,1290,1302,1321,1900
+flat-multi,trackertest,Get Child Programme TEs / Get TEs from events,100,100,0,0.21,5,6,6,7,8,9
+flat-multi,trackertest,Get Child Programme TEs / Get first page of TEs,100,100,0,0.21,19,104,105,109,114,114
+flat-multi,trackertest,Get Child Programme TEs / Get TEs with enrollment status,100,100,0,0.21,127,129,130,134,140,144
+flat-multi,trackertest,Login,5,5,0,0.01,94,98,99,111,113,114
+flat-multi,trackertest,MNCH import,1000,1000,0,2.05,56,94,103,119,174,626
+flat-multi,trackertest,Child Programme import,1000,1000,0,2.05,65,68,70,75,84,251
+flat-multi,trackertest,ANC import,1000,1000,0,2.05,33,36,38,43,87,587
 """
 
     @staticmethod
@@ -492,11 +500,29 @@ flat-multi,trackertest,ANC import,1000,1000,0,33,36,38,43,87,587
         self.assertEqual(
             header,
             "directory,simulation,run_timestamp,request_name,"
-            "count,ok_count,ko_count,min,50th,75th,95th,99th,max",
+            "count,ok_count,ko_count,req_per_sec,min,50th,75th,95th,99th,max",
         )
         self.assertEqual(len(rows), 46)
         timestamps = {row.split(",")[2] for row in rows}
         self.assertEqual(timestamps, {"2026-04-24 07:05:46", "2026-04-24 07:12:14"})
+
+        # req_per_sec column (index 7) must be a non-negative number for every
+        # row, formatted with two decimals.
+        for row in rows:
+            cells = row.split(",")
+            rps = cells[7]
+            self.assertRegex(rps, r"^\d+\.\d{2}$", msg=f"bad req_per_sec cell: {rps!r}")
+
+        # Pin one main-run "import" row: 1000 requests / actual measured window
+        # (~487.59s) ≈ 2.05 req/s. Picks an unambiguous request_name so the
+        # assertion is stable against fixture ordering.
+        main_mnch_rows = [
+            row
+            for row in rows
+            if row.split(",")[2] == "2026-04-24 07:12:14" and row.split(",")[3] == "MNCH import"
+        ]
+        self.assertEqual(len(main_mnch_rows), 1)
+        self.assertEqual(main_mnch_rows[0].split(",")[7], "2.05")
 
     def test_combined_output_combines_runs(self):
         """`--combine` combines warmup + main response times by request name and
@@ -531,26 +557,151 @@ flat-multi,trackertest,ANC import,1000,1000,0,33,36,38,43,87,587
         ]
         self.assertEqual(per_run_requests, combined_requests)
 
+    def test_req_per_sec_uses_actual_measured_window(self):
+        """`req_per_sec = count / (max(end_timestamp) - min(start_timestamp))`,
+        computed over the whole run (matches Gatling's `Cnt/s`). The TODO note
+        from the 2.43 release-note workflow recorded the trap this guards: a
+        300s sweep with count=3156 gives 10.52 against the nominal duration but
+        Gatling reports 10.48 against the actual measured window. Synthetic CSV
+        below pins the same shape: nominal 4s window, actual 4.5s, three
+        requests → 0.67 req/s, not 0.75."""
+        # fmt: off
+        # ruff: noqa: E501
+        csv_content = """record_type,scenario_name,group_hierarchy,request_name,status,start_timestamp,end_timestamp,response_time_ms,error_message,event_type,duration_ms,cumulated_response_time_ms,is_incoming
+request,,,FastReq,OK,1000,1100,100,,,,,false
+request,,,FastReq,OK,3000,3100,100,,,,,false
+request,,,FastReq,OK,5000,5500,500,,,,,false
+"""
+            # fmt: on
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_dir = Path(tmpdir) / "trackertest-20250101010101010-test"
+            test_dir.mkdir()
+            (test_dir / "simulation.csv").write_text(csv_content)
+
+            gatling_data = load_gatling_data(test_dir)
+
+            # Whole-run window: end_max=5500, start_min=1000 → 4.5s. Three requests
+            # → 0.6667 req/s rounded to 0.67.
+            run = gatling_data.get_run("trackertest", "20250101010101010")
+            self.assertAlmostEqual(run.duration_seconds, 4.5, places=3)
+
+            out = self._capture(format_output, gatling_data)
+            rows = [line for line in out.splitlines() if line and not line.startswith("directory,")]
+            self.assertEqual(len(rows), 1)
+            cells = rows[0].split(",")
+            # count=3, ok=3, ko=0, req_per_sec=0.67 (3 / 4.5).
+            self.assertEqual(cells[4], "3")
+            self.assertEqual(cells[7], "0.67")
+
+    def test_req_per_sec_matches_gatling_html_with_mixed_ok_ko(self):
+        """End-to-end parity check against Gatling's own HTML statistics table.
+
+        Fixture: a real export run from DHIS2-20965 (2.42.4, 4 users, 300s) where
+        `MNCH import` has mixed OK/KO (990 OK + 10 KO). Reference values copied
+        verbatim from the run's `index.html` (col-2=Total, col-3=OK, col-4=KO,
+        col-6=Cnt/s). Pinning the same numbers gstat produces guards two
+        invariants the TODO calls out:
+
+        * `req_per_sec` denominator is the actual measured window, so the
+          number matches Gatling's `Cnt/s` rather than `count / nominal_duration`.
+        * `count` and the throughput numerator both include KO requests, so a
+          mixed row reports the same throughput Gatling does.
+
+        If Gatling ever changes its rounding or denominator, this test will
+        catch the drift instead of letting release-note tables diverge silently.
+        """
+        gatling_data = load_gatling_data(WITH_KO_FIXTURE_DIR)
+        out = self._capture(format_output, gatling_data)
+
+        # Header order is stable: count is column 4, ok=5, ko=6, req_per_sec=7.
+        rows = {
+            row.split(",")[3]: row.split(",")
+            for row in out.splitlines()
+            if row and not row.startswith("directory,")
+        }
+
+        # (request_name, count, ok, ko, req_per_sec) tuples lifted from index.html.
+        gatling_reference = [
+            # Mixed OK/KO row — the load-bearing case for this test.
+            ("MNCH import", "1000", "990", "10", "0.13"),
+            # All-OK rows at the same nominal rate (sanity that 0.13 isn't a fluke
+            # of the mixed row).
+            ("ANC import", "1000", "1000", "0", "0.13"),
+            ("Child Programme import", "1000", "1000", "0", "0.13"),
+            # Low-count row Gatling rounds to 0.00 — pins the rounding contract,
+            # not a particular non-zero value.
+            ("Login", "11", "11", "0", "0.00"),
+        ]
+        for name, count, ok, ko, rps in gatling_reference:
+            cells = rows[name]
+            self.assertEqual(cells[4], count, f"{name}: count")
+            self.assertEqual(cells[5], ok, f"{name}: ok_count")
+            self.assertEqual(cells[6], ko, f"{name}: ko_count")
+            self.assertEqual(cells[7], rps, f"{name}: req_per_sec vs Gatling Cnt/s")
+
+    def test_req_per_sec_combined_sums_per_run_durations(self):
+        """When `--combine` merges multiple runs, the throughput denominator is
+        the sum of per-run measured windows. Two runs each carrying 100 requests
+        over 100s → 200/200 = 1.00 req/s, regardless of the wall-clock gap
+        between them."""
+        # fmt: off
+        # ruff: noqa: E501
+        csv_run_a = """record_type,scenario_name,group_hierarchy,request_name,status,start_timestamp,end_timestamp,response_time_ms,error_message,event_type,duration_ms,cumulated_response_time_ms,is_incoming
+""" + "\n".join(
+            f"request,,,Search,OK,{1000 + i},{1000 + i + 1},1,,,,,false"
+            for i in range(0, 100_000, 1000)
+        ) + "\n"
+        # Second run starts well after the first ends; the gap must not show up
+        # as "active duration" in the combined denominator.
+        csv_run_b = """record_type,scenario_name,group_hierarchy,request_name,status,start_timestamp,end_timestamp,response_time_ms,error_message,event_type,duration_ms,cumulated_response_time_ms,is_incoming
+""" + "\n".join(
+            f"request,,,Search,OK,{1_000_000 + i},{1_000_000 + i + 1},1,,,,,false"
+            for i in range(0, 100_000, 1000)
+        ) + "\n"
+        # fmt: on
+        with tempfile.TemporaryDirectory() as tmpdir:
+            parent = Path(tmpdir)
+            for ts, csv in [
+                ("20250101010101010", csv_run_a),
+                ("20250101020202020", csv_run_b),
+            ]:
+                d = parent / f"trackertest-{ts}-test"
+                d.mkdir()
+                (d / "simulation.csv").write_text(csv)
+
+            gatling_data = load_gatling_data(parent)
+            out = self._capture(format_output_combined, gatling_data)
+
+            rows = [line for line in out.splitlines() if line and not line.startswith("directory,")]
+            self.assertEqual(len(rows), 1)
+            cells = rows[0].split(",")
+            # count=200; per-run windows are each 99.001s (start_min=1000 to
+            # end_max=100001 in run A, etc.), summed = 198.002s; 200 / 198.002 ≈ 1.01.
+            self.assertEqual(cells[3], "200")
+            self.assertEqual(cells[6], "1.01")
+
 
 def make_compare_input(
     label: str,
     rows: dict[str, dict],
     path_name: str | None = None,
 ) -> CompareInput:
-    """Build a CompareInput from a compact `{request_name: {pXX: value, "ok": int, "ko": int}}`.
+    """Build a CompareInput from a compact `{request_name: {pXX: value, "ok": int, "ko": int, "rps": float}}`.
 
     Keeps rendering tests focused on inputs and expected output rather than CSV bytes.
     """
     percentiles = {
-        req: {k: v for k, v in stats.items() if k not in ("ok", "ko")}
+        req: {k: v for k, v in stats.items() if k not in ("ok", "ko", "rps")}
         for req, stats in rows.items()
     }
     ok_ko_counts = {req: (stats.get("ok", 0), stats.get("ko", 0)) for req, stats in rows.items()}
+    req_per_sec = {req: stats.get("rps", 0.0) for req, stats in rows.items()}
     return CompareInput(
         path=Path(path_name or label),
         label=label,
         percentiles=percentiles,
         ok_ko_counts=ok_ko_counts,
+        req_per_sec=req_per_sec,
     )
 
 
@@ -590,19 +741,31 @@ class TestCompare(unittest.TestCase):
         self.assertIn("### 95th Percentile Response Time (p95) (ms)", out)
         self.assertNotIn("### Median Response Time", out)
 
-        # Table column headers (KO% column always present, per run)
-        self.assertIn("| Scenario | warmup | KO% | main | KO% | Diff | Change |", out)
+        # Table column headers (req/s + KO% per run)
+        self.assertIn(
+            "| Scenario | warmup | req/s | KO% | main | req/s | KO% | Diff | Change |", out
+        )
 
         # Improvement: small absolute diff, sub-3% change. Exercises down-arrow + sign.
-        self.assertIn("| ANC import | 44 | 0.0% | 43 | 0.0% | -1 | :arrow_down: -2.3% |", out)
+        # 1000 imports / warmup window (~377.89s) ≈ 2.65 req/s; / main window
+        # (~487.59s) ≈ 2.05 req/s. Pins both throughputs alongside the percentile.
+        self.assertIn(
+            "| ANC import | 44 | 2.65 | 0.0% | 43 | 2.05 | 0.0% | -1 | :arrow_down: -2.3% |",
+            out,
+        )
 
         # Improvement: large negative diff, double-digit percent. Exercises down-arrow + double-digit.
-        self.assertIn("| Login | 152 | 0.0% | 111 | 0.0% | -41 | :arrow_down: -26.9% |", out)
+        # Login fires 5 times per run; req/s ≈ 0.01 in both windows.
+        self.assertIn(
+            "| Login | 152 | 0.01 | 0.0% | 111 | 0.01 | 0.0% | -41 | :arrow_down: -26.9% |",
+            out,
+        )
 
         # Regression: large positive diff, near-100%, comma-formatted four-digit value.
-        # Exercises up-arrow + {:,.0f} comma + multi-percent.
+        # Exercises up-arrow + {:,.0f} comma + multi-percent. 100 hits per run:
+        # 100/377.89 ≈ 0.26, 100/487.59 ≈ 0.21.
         self.assertIn(
-            "| Get Child Programme TEs / Search Birth events | 665 | 0.0% | 1,302 | 0.0% | +637 | :arrow_up: +95.8% |",
+            "| Get Child Programme TEs / Search Birth events | 665 | 0.26 | 0.0% | 1,302 | 0.21 | 0.0% | +637 | :arrow_up: +95.8% |",
             out,
         )
 
@@ -614,63 +777,72 @@ class TestCompare(unittest.TestCase):
         """When a request appears in only one input, the missing-side cells render as `-`
         (not `N/A`, not `0`). Exercises the `if oval is None or bval is None` branch."""
         baseline = make_compare_input(
-            "a", {"Login": {"95th": 108, "ok": 1}}, path_name="a-20250101010101010-test"
+            "a",
+            {"Login": {"95th": 108, "ok": 1, "rps": 1.5}},
+            path_name="a-20250101010101010-test",
         )
         candidate = make_compare_input(
             "b",
-            {"Login": {"95th": 120, "ok": 1}, "Search": {"95th": 50, "ok": 1}},
+            {
+                "Login": {"95th": 120, "ok": 1, "rps": 1.4},
+                "Search": {"95th": 50, "ok": 1, "rps": 0.8},
+            },
             path_name="b-20250101010101010-test",
         )
 
         out = format_compare_markdown([baseline, candidate], ["95th"], self.PERCENTILE_TITLES)
 
         # Login is in both: real numbers + diff/change. KO% = 0 in both inputs.
-        self.assertIn("| Login | 108 | 0.0% | 120 | 0.0% | +12 | :arrow_up: +11.1% |", out)
-        # Search is only in candidate: baseline value `-`, baseline KO% `-`,
-        # candidate value/KO% real, but diff/change `-` because baseline is None.
-        self.assertIn("| Search | - | - | 50 | 0.0% | - | - |", out)
+        self.assertIn(
+            "| Login | 108 | 1.50 | 0.0% | 120 | 1.40 | 0.0% | +12 | :arrow_up: +11.1% |", out
+        )
+        # Search is only in candidate: baseline value/req/s/KO% all `-`,
+        # candidate value/req/s/KO% real, but diff/change `-` because baseline is None.
+        self.assertIn("| Search | - | - | - | 50 | 0.80 | 0.0% | - | - |", out)
 
     def test_compare_no_diff_drops_diff_column_only(self):
         """`--no-diff` removes the Diff column but keeps the candidate value and Change."""
-        baseline = make_compare_input("warmup", {"Login": {"95th": 152, "ok": 1}})
-        candidate = make_compare_input("main", {"Login": {"95th": 111, "ok": 1}})
+        baseline = make_compare_input("warmup", {"Login": {"95th": 152, "ok": 1, "rps": 0.5}})
+        candidate = make_compare_input("main", {"Login": {"95th": 111, "ok": 1, "rps": 0.6}})
 
         out = format_compare_markdown(
             [baseline, candidate], ["95th"], self.PERCENTILE_TITLES, show_diff=False
         )
 
-        # Diff column header is gone; Change is still there. KO% stays per run.
-        self.assertIn("| Scenario | warmup | KO% | main | KO% | Change |", out)
+        # Diff column header is gone; Change is still there. req/s + KO% stay per run.
+        self.assertIn("| Scenario | warmup | req/s | KO% | main | req/s | KO% | Change |", out)
         self.assertNotIn("Diff", out)
 
-        # Row loses the -41 Diff cell but keeps the KO% cells.
-        self.assertIn("| Login | 152 | 0.0% | 111 | 0.0% | :arrow_down: -27.0% |", out)
+        # Row loses the -41 Diff cell but keeps the req/s and KO% cells.
+        self.assertIn(
+            "| Login | 152 | 0.50 | 0.0% | 111 | 0.60 | 0.0% | :arrow_down: -27.0% |", out
+        )
 
         # Arrow legend stays because Change column is present.
         self.assertIn("_:arrow_down: = faster, :arrow_up: = slower_", out)
 
     def test_compare_no_change_drops_change_column_and_legend(self):
         """`--no-change` removes the Change column and the arrow legend; Diff stays."""
-        baseline = make_compare_input("warmup", {"Login": {"95th": 152, "ok": 1}})
-        candidate = make_compare_input("main", {"Login": {"95th": 111, "ok": 1}})
+        baseline = make_compare_input("warmup", {"Login": {"95th": 152, "ok": 1, "rps": 0.5}})
+        candidate = make_compare_input("main", {"Login": {"95th": 111, "ok": 1, "rps": 0.6}})
 
         out = format_compare_markdown(
             [baseline, candidate], ["95th"], self.PERCENTILE_TITLES, show_change=False
         )
 
-        # Change column header is gone; Diff is still there. KO% stays per run.
-        self.assertIn("| Scenario | warmup | KO% | main | KO% | Diff |", out)
+        # Change column header is gone; Diff is still there. req/s + KO% stay per run.
+        self.assertIn("| Scenario | warmup | req/s | KO% | main | req/s | KO% | Diff |", out)
         self.assertNotIn("Change", out)
         self.assertNotIn(":arrow_down:", out)
         self.assertNotIn(":arrow_up:", out)
 
         # Row keeps the Diff cell, drops the Change cell.
-        self.assertIn("| Login | 152 | 0.0% | 111 | 0.0% | -41 |", out)
+        self.assertIn("| Login | 152 | 0.50 | 0.0% | 111 | 0.60 | 0.0% | -41 |", out)
 
     def test_compare_no_diff_no_change_leaves_only_value_columns(self):
-        """Both toggles together collapse each candidate to a single value column."""
-        baseline = make_compare_input("warmup", {"Login": {"95th": 152, "ok": 1}})
-        candidate = make_compare_input("main", {"Login": {"95th": 111, "ok": 1}})
+        """Both toggles together collapse each candidate to value + req/s + KO% columns."""
+        baseline = make_compare_input("warmup", {"Login": {"95th": 152, "ok": 1, "rps": 0.5}})
+        candidate = make_compare_input("main", {"Login": {"95th": 111, "ok": 1, "rps": 0.6}})
 
         out = format_compare_markdown(
             [baseline, candidate],
@@ -680,10 +852,10 @@ class TestCompare(unittest.TestCase):
             show_change=False,
         )
 
-        self.assertIn("| Scenario | warmup | KO% | main | KO% |", out)
+        self.assertIn("| Scenario | warmup | req/s | KO% | main | req/s | KO% |", out)
         self.assertNotIn("Diff", out)
         self.assertNotIn("Change", out)
-        self.assertIn("| Login | 152 | 0.0% | 111 | 0.0% |", out)
+        self.assertIn("| Login | 152 | 0.50 | 0.0% | 111 | 0.60 | 0.0% |", out)
 
     def test_compare_ko_rows_contribute_to_percentile_and_ko_pct(self):
         """KO rows are included in the percentile and reported in the KO% column.
@@ -695,13 +867,15 @@ class TestCompare(unittest.TestCase):
         * Candidate: 4 OK at 100 ms + 1 KO at 60,000 ms → p95 = 48,020 (linear interp).
         * KO% in candidate = 1 / 5 = 20.0%.
         """
-        baseline = make_compare_input("clean", {"Search": {"95th": 100, "ok": 4}})
-        candidate = make_compare_input("failing", {"Search": {"95th": 48020, "ok": 4, "ko": 1}})
+        baseline = make_compare_input("clean", {"Search": {"95th": 100, "ok": 4, "rps": 0.10}})
+        candidate = make_compare_input(
+            "failing", {"Search": {"95th": 48020, "ok": 4, "ko": 1, "rps": 0.05}}
+        )
 
         out = format_compare_markdown([baseline, candidate], ["95th"], self.PERCENTILE_TITLES)
 
         self.assertIn(
-            "| Search | 100 | 0.0% | 48,020 | 20.0% | +47,920 | :arrow_up: +47920.0% |",
+            "| Search | 100 | 0.10 | 0.0% | 48,020 | 0.05 | 20.0% | +47,920 | :arrow_up: +47920.0% |",
             out,
         )
 

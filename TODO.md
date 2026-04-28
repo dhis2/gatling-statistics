@@ -9,24 +9,6 @@ discussion.
 
 Captured while regenerating every p95 table in the 2.43 release notes from `gstat`.
 
-* **Add `req_per_sec` (throughput) column.** Both default and `--combine` CSV outputs, and
-the `compare` Markdown, would benefit from a throughput column alongside `count`. Gatling
-calls this `Cnt/s` and computes it as `count / run_duration_seconds` over the full
-population. We'd compute the same way (over OK+KO since percentiles already are) and
-expose it as `req_per_sec`. Skipped from this round because the run-duration math has its
-own small design question (per-request time span vs. whole-run duration; Gatling uses
-whole-run) that is worth resolving in its own commit.
-  * **Workflow data point (2026-04-27).** Re-confirmed during the 2.43 release-note
-regeneration: every concurrency-sweep, soak, and pool-comparison table needs a `req/s`
-column next to `p95`. Today the author either eyeballs Gatling's HTML index page or
-divides `count` by the configured run duration. For a 300s sweep this came out close to
-Gatling's number but **not identical** (e.g. 2.43.0 6u Child p95 row: gstat
-`count=3156`, naive 3156/300 = 10.52, but Gatling HTML/release-note value is 10.48 —
-Gatling computes over the actual measured window, not the nominal `importDurationSec`).
-That ~0.4% drift is enough to make hand-stitched tables disagree with Gatling's HTML by
-1 in the second decimal, which is exactly the kind of small noise that erodes trust.
-Strong argument for landing this column: same number, same source.
-
 * **Add request filtering to `gstat compare`.** Two recurring needs collapse into one
 flag pair: drop noise rows the user does not care about (e.g. `Login`, which most
 release-note authors strip by hand), and narrow to a subset for focused tables (e.g.

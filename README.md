@@ -176,6 +176,11 @@ Available plot types: `distribution`, `stacked`, `scatter`, `scatter-all`, `time
 * `count`: Total number of requests (OK + KO)
 * `ok_count`: Number of OK (successful) requests
 * `ko_count`: Number of KO (failed) requests
+* `req_per_sec`: Throughput as `count / actual_run_duration_seconds`, where the run
+duration is `max(end_timestamp) - min(start_timestamp)` across all OK + KO requests in
+the run. Matches Gatling's `Cnt/s` (which uses the actual measured window, not the
+nominal run duration, so a 300s run that overruns by 1s reports `count / 301`, not
+`count / 300`).
 * `min`: Minimum response time (ms)
 * `50th`: 50th percentile response time (ms)
 * `75th`: 75th percentile response time (ms)
@@ -184,9 +189,9 @@ Available plot types: `distribution`, `stacked`, `scatter`, `scatter-all`, `time
 * `max`: Maximum response time (ms)
 
 ```csv
-simulation,run_timestamp,request_name,count,ok_count,ko_count,min,50th,75th,95th,99th,max
-trackerexportertests,20250627064559771,events,38,38,0,320,357,380,557,1258,1258
-trackerexportertests,20250627095400668,events,7,5,2,2138,2346,2383,3345,3345,3345
+simulation,run_timestamp,request_name,count,ok_count,ko_count,req_per_sec,min,50th,75th,95th,99th,max
+trackerexportertests,20250627064559771,events,38,38,0,0.13,320,357,380,557,1258,1258
+trackerexportertests,20250627095400668,events,7,5,2,0.02,2138,2346,2383,3345,3345,3345
 ```
 
 ### Status handling (OK / KO)

@@ -69,7 +69,12 @@ def calculate_percentiles(response_times: list[float]) -> dict[str, float]:
 
 
 class GatlingRequest(NamedTuple):
-    """Data for a specific request in a specific run."""
+    """Data for a specific request in a specific run.
+
+    `req_per_sec` is `count / run.duration_seconds` (the request's share of the
+    whole-run measured window). Matches Gatling's HTML `Cnt/s` column. Computed
+    once at load time so consumers don't need to know the divisor.
+    """
 
     response_times: list[float]
     timestamps: list[tuple[datetime, datetime]]  # (start, end)
@@ -78,6 +83,7 @@ class GatlingRequest(NamedTuple):
     count: int
     ok_count: int
     ko_count: int
+    req_per_sec: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +92,11 @@ class GatlingRun:
 
     Constructed once by the loader with all requests already in Gatling HTML
     report order. Treat as read-only.
+
+    `duration_seconds` is the actual measured window of the run (max end_timestamp
+    minus min start_timestamp across every request in the run, OK + KO). This is
+    the same denominator Gatling's HTML uses for `Cnt/s`, so dividing a request's
+    `count` by this value matches the throughput Gatling reports.
     """
 
     raw_timestamp: str
@@ -94,6 +105,7 @@ class GatlingRun:
     directory: Path
     suffix: str
     requests: OrderedDict[str, GatlingRequest]
+    duration_seconds: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -393,6 +405,9 @@ def _load_single_directory(directory: Path) -> tuple[str, str, GatlingRun] | Non
     ordered_keys = order_requests_gatling_html(df)
     groups = dict(list(df.groupby(["group_hierarchy", "request_name"], sort=False)))
 
+    # Actual measured window for the whole run (matches Gatling's `Cnt/s` denominator).
+    duration_seconds = (df["end_timestamp"].max() - df["start_timestamp"].min()).total_seconds()
+
     requests: OrderedDict[str, GatlingRequest] = OrderedDict()
     for group_hierarchy, request_name in ordered_keys:
         group = groups[(group_hierarchy, request_name)]
@@ -410,6 +425,7 @@ def _load_single_directory(directory: Path) -> tuple[str, str, GatlingRun] | Non
         count = len(response_times)
         ok_count = int((group["status"] == "OK").sum())
         ko_count = count - ok_count
+        req_per_sec = count / duration_seconds if duration_seconds > 0 else 0.0
 
         requests[full_path] = GatlingRequest(
             response_times=response_times,
@@ -419,6 +435,7 @@ def _load_single_directory(directory: Path) -> tuple[str, str, GatlingRun] | Non
             count=count,
             ok_count=ok_count,
             ko_count=ko_count,
+            req_per_sec=req_per_sec,
         )
 
     run_data = GatlingRun(
@@ -428,5 +445,6 @@ def _load_single_directory(directory: Path) -> tuple[str, str, GatlingRun] | Non
         directory=directory,
         suffix=suffix,
         requests=requests,
+        duration_seconds=duration_seconds,
     )
     return simulation, run_timestamp, run_data

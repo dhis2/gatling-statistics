@@ -94,9 +94,10 @@ COMPARE_HELP = """\
 Usage: gstat compare <baseline-dir> [--label NAME] <other-dir> [--label NAME] ... [options]
 
 Compare percentiles across two or more Gatling runs as Markdown tables.
-The first run is the baseline. Each non-baseline run gets three columns:
-the percentile value, Diff (other - baseline, in ms), and Change
-((other - baseline) / baseline * 100, in %).
+The first run is the baseline. Each input contributes the percentile value,
+req/s (request_count / actual run duration, matching Gatling's Cnt/s) and
+KO%. Each non-baseline run also gets Diff (other - baseline, in ms) and
+Change ((other - baseline) / baseline * 100, in %).
 
 Each input may be followed by --label NAME to override the column header
 (default: the directory's basename).
