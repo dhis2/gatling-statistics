@@ -478,6 +478,7 @@ class TestCompare(unittest.TestCase):
 
         # Footer legend
         self.assertIn("_:arrow_down: = faster, :arrow_up: = slower_", out)
+        self.assertIn("inclusive definition", out)
 
     def test_compare_handles_request_set_difference(self):
         """When a request appears in only one input, the missing-side cells render as `-`

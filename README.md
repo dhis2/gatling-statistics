@@ -126,7 +126,10 @@ percentiles.
 `gstat` uses
 [`numpy.percentile`](https://numpy.org/doc/stable/reference/generated/numpy.percentile.html)
 with the `linear` method ("type 7", same as Prometheus and Grafana) over the full sorted
-sample.
+sample. This is the
+[**inclusive** definition](https://en.wikipedia.org/wiki/Percentile#The_linear_interpolation_between_closest_ranks_method):
+p95 = 1302 ms means 95% of `Search Birth events` requests in our test fixture responded in
+1302 ms or less.
 
 Gatling uses
 [`AVLTreeDigest`](https://github.com/tdunning/t-digest) (a t-digest variant) via the

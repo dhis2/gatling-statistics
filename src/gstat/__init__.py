@@ -1563,6 +1563,11 @@ def format_compare_markdown(
     if show_change:
         lines.append("")
         lines.append("_:arrow_down: = faster, :arrow_up: = slower_")
+    lines.append("")
+    lines.append(
+        "_Percentiles use the inclusive definition (e.g. p95 = X means 95% of "
+        "requests responded in X ms or less) and are computed over OK + KO responses._"
+    )
     return "\n".join(lines) + "\n"
 
 
