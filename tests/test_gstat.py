@@ -8,6 +8,7 @@ import io
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -20,6 +21,7 @@ from gstat import (
     format_output_combined,
     load_gatling_data,
     order_requests_gatling_html,
+    parse_gatling_directory_timestamp,
     plot_percentiles_stacked,
 )
 
@@ -717,6 +719,66 @@ class TestCompare(unittest.TestCase):
         z_idx = out.index("| Z |")
         self.assertLess(x_idx, y_idx)
         self.assertLess(y_idx, z_idx)
+
+
+class TestParseGatlingDirectoryTimestamp(unittest.TestCase):
+    """Pin the timestamp parser. The 17-digit form ends in 3 milliseconds digits,
+    not microseconds. strptime's %f would otherwise misinterpret '771' as 771 µs
+    instead of 771,000 µs - the conversion is the trap this suite guards."""
+
+    def test_canonical_17_digit_form_with_milliseconds(self):
+        self.assertEqual(
+            parse_gatling_directory_timestamp("20250627064559771"),
+            datetime(2025, 6, 27, 6, 45, 59, 771_000),
+        )
+
+    def test_milliseconds_are_milliseconds_not_microseconds(self):
+        # 1 ms must become 1,000 µs. If %f were applied naively to "001"
+        # it would parse as 1 µs.
+        self.assertEqual(
+            parse_gatling_directory_timestamp("20260101000000001"),
+            datetime(2026, 1, 1, 0, 0, 0, 1_000),
+        )
+
+    def test_zero_milliseconds(self):
+        self.assertEqual(
+            parse_gatling_directory_timestamp("20260101000000000"),
+            datetime(2026, 1, 1, 0, 0, 0, 0),
+        )
+
+    def test_max_milliseconds(self):
+        self.assertEqual(
+            parse_gatling_directory_timestamp("20260101000000999"),
+            datetime(2026, 1, 1, 0, 0, 0, 999_000),
+        )
+
+    def test_14_digit_form_without_milliseconds(self):
+        self.assertEqual(
+            parse_gatling_directory_timestamp("20260101000000"),
+            datetime(2026, 1, 1, 0, 0, 0, 0),
+        )
+
+    def test_invalid_calendar_date_returns_min(self):
+        # Non-leap-year Feb 29.
+        self.assertEqual(
+            parse_gatling_directory_timestamp("20260229000000000"),
+            datetime.min,
+        )
+
+    def test_invalid_month_returns_min(self):
+        self.assertEqual(
+            parse_gatling_directory_timestamp("20261301000000000"),
+            datetime.min,
+        )
+
+    def test_non_digit_input_returns_min(self):
+        self.assertEqual(
+            parse_gatling_directory_timestamp("not-a-timestamp"),
+            datetime.min,
+        )
+
+    def test_empty_input_returns_min(self):
+        self.assertEqual(parse_gatling_directory_timestamp(""), datetime.min)
 
 
 if __name__ == "__main__":
