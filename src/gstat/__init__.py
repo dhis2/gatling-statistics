@@ -9,6 +9,7 @@ import argparse
 import re
 import sys
 from collections import OrderedDict
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
@@ -149,58 +150,32 @@ class RequestData(NamedTuple):
     ko_count: int
 
 
+@dataclass(frozen=True, slots=True)
 class RunData:
-    """Data for a complete simulation run."""
+    """Data for a complete simulation run.
 
-    def __init__(self, raw_timestamp: str, directory: Path, suffix: str = ""):
-        self.raw_timestamp = raw_timestamp
-        self.formatted_timestamp = format_timestamp(raw_timestamp)
-        self.datetime_timestamp = parse_gatling_directory_timestamp(raw_timestamp)
-        self.directory = directory
-        self.suffix = suffix
-        self.requests: OrderedDict[str, RequestData] = OrderedDict()
+    Constructed once by the loader with all requests already in Gatling HTML
+    report order. Treat as read-only.
+    """
+
+    raw_timestamp: str
+    formatted_timestamp: str
+    datetime_timestamp: datetime
+    directory: Path
+    suffix: str
+    requests: OrderedDict[str, RequestData]
 
 
+@dataclass(frozen=True, slots=True)
 class GatlingData:
     """Unified data structure for all Gatling performance data.
 
-    Structure: {simulation: {run_timestamp: RunData}}
-    All data is stored in sorted order for consistent presentation.
+    Structure: {simulation: {run_timestamp: RunData}}, sorted at construction.
+    Treat as read-only.
     """
 
-    def __init__(self, report_directory: Path = None):
-        self.data: OrderedDict[str, OrderedDict[str, RunData]] = OrderedDict()
-        self.report_directory = report_directory
-
-    def add_request_data(
-        self,
-        simulation: str,
-        run_timestamp: str,
-        request_name: str,
-        request_data: RequestData,
-        directory: Path,
-        suffix: str = "",
-    ) -> None:
-        """Add request data maintaining sorted order."""
-        if simulation not in self.data:
-            self.data[simulation] = OrderedDict()
-
-        if run_timestamp not in self.data[simulation]:
-            self.data[simulation][run_timestamp] = RunData(run_timestamp, directory, suffix)
-
-        self.data[simulation][run_timestamp].requests[request_name] = request_data
-
-    def finalize_ordering(self) -> None:
-        """Sort all data levels after loading is complete."""
-        # Sort simulations alphabetically
-        sorted_sims = OrderedDict(sorted(self.data.items()))
-
-        # Sort run timestamps in ascending order (oldest first)
-        for simulation in sorted_sims:
-            sorted_runs = OrderedDict(sorted(sorted_sims[simulation].items()))
-            sorted_sims[simulation] = sorted_runs
-
-        self.data = sorted_sims
+    report_directory: Path | None
+    data: OrderedDict[str, OrderedDict[str, RunData]]
 
     def get_simulations(self) -> list[str]:
         """Get all simulation names in sorted order."""
@@ -513,8 +488,19 @@ def is_multiple_reports_directory(directory: Path) -> bool:
 
 
 def load_gatling_data(directory: Path, exclude: str = None) -> GatlingData:
-    """Load all Gatling data from directory, handling both single and multi-directory cases."""
-    gatling_data = GatlingData(directory)
+    """Load all Gatling data from directory, handling both single and multi-directory cases.
+
+    Builds an immutable GatlingData with simulations and runs sorted; consumers
+    can rely on the data being complete and ordered.
+    """
+    raw: dict[str, dict[str, RunData]] = {}
+
+    def ingest(subdir: Path) -> None:
+        loaded = _load_single_directory(subdir)
+        if loaded is None:
+            return
+        simulation, run_timestamp, run_data = loaded
+        raw.setdefault(simulation, {})[run_timestamp] = run_data
 
     if is_multiple_reports_directory(directory):
         for subdir in directory.iterdir():
@@ -526,20 +512,21 @@ def load_gatling_data(directory: Path, exclude: str = None) -> GatlingData:
                 continue
 
             try:
-                _load_single_directory(gatling_data, subdir)
+                ingest(subdir)
             except Exception as e:
                 print(f"Warning: Error processing {subdir}: {e}", file=sys.stderr)
                 continue
     else:
-        _load_single_directory(gatling_data, directory)
+        ingest(directory)
 
-    gatling_data.finalize_ordering()
-
-    if not gatling_data.data:
+    if not raw:
         print(f"No valid simulation data found in {directory}", file=sys.stderr)
         sys.exit(1)
 
-    return gatling_data
+    sorted_data: OrderedDict[str, OrderedDict[str, RunData]] = OrderedDict(
+        (sim, OrderedDict(sorted(runs.items()))) for sim, runs in sorted(raw.items())
+    )
+    return GatlingData(report_directory=directory, data=sorted_data)
 
 
 def order_requests_gatling_html(df: pd.DataFrame) -> list[tuple[str, str]]:
@@ -590,8 +577,12 @@ def order_requests_gatling_html(df: pd.DataFrame) -> list[tuple[str, str]]:
     return ordered
 
 
-def _load_single_directory(gatling_data: GatlingData, directory: Path) -> None:
-    """Load Gatling data from a directory directly containing one simulation.csv"""
+def _load_single_directory(directory: Path) -> tuple[str, str, RunData] | None:
+    """Load Gatling data from a directory directly containing one simulation.csv.
+
+    Returns (simulation, run_timestamp, RunData) ready to be inserted into
+    GatlingData, or None if the directory has no simulation.csv to read.
+    """
     parsed = parse_gating_directory_name(directory.name)
     if parsed:
         simulation, run_timestamp, suffix = parsed
@@ -610,6 +601,8 @@ def _load_single_directory(gatling_data: GatlingData, directory: Path) -> None:
     df["group_hierarchy"] = df["group_hierarchy"].fillna("")
     ordered_keys = order_requests_gatling_html(df)
     groups = dict(list(df.groupby(["group_hierarchy", "request_name"], sort=False)))
+
+    requests: OrderedDict[str, RequestData] = OrderedDict()
     for group_hierarchy, request_name in ordered_keys:
         group = groups[(group_hierarchy, request_name)]
         # Compose the display path using Gatling's HTML separator (" / "), with
@@ -627,7 +620,7 @@ def _load_single_directory(gatling_data: GatlingData, directory: Path) -> None:
         ok_count = int((group["status"] == "OK").sum())
         ko_count = count - ok_count
 
-        request_data = RequestData(
+        requests[full_path] = RequestData(
             response_times=response_times,
             timestamps=timestamps,
             percentiles=percentiles,
@@ -637,9 +630,15 @@ def _load_single_directory(gatling_data: GatlingData, directory: Path) -> None:
             ko_count=ko_count,
         )
 
-        gatling_data.add_request_data(
-            simulation, run_timestamp, full_path, request_data, directory, suffix
-        )
+    run_data = RunData(
+        raw_timestamp=run_timestamp,
+        formatted_timestamp=format_timestamp(run_timestamp),
+        datetime_timestamp=parse_gatling_directory_timestamp(run_timestamp),
+        directory=directory,
+        suffix=suffix,
+        requests=requests,
+    )
+    return simulation, run_timestamp, run_data
 
 
 def plot_percentiles_stacked(gatling_data: GatlingData) -> go.Figure:
@@ -1578,7 +1577,6 @@ def format_output(gatling_data: GatlingData) -> None:
         "count,ok_count,ko_count,min,50th,75th,95th,99th,max"
     )
 
-    # Data is already sorted by GatlingData.finalize_ordering()
     for simulation in gatling_data.get_simulations():
         for run_timestamp in gatling_data.get_runs(simulation):
             run_data = gatling_data.get_run_data(simulation, run_timestamp)
