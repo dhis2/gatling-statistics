@@ -470,7 +470,11 @@ def _get_run_label(run: str, gatling_data: GatlingRuns, simulation: str) -> str:
 
 
 def is_multiple_reports_directory(directory: Path) -> bool:
-    """Check if directory contains multiple simulation report subdirectories."""
+    """Check if directory contains multiple Gatling report subdirectories.
+
+    Looks one level down. The descent through wrapper directories is handled
+    by find_report_root before this is called.
+    """
     if not directory.is_dir():
         return False
 
@@ -478,7 +482,7 @@ def is_multiple_reports_directory(directory: Path) -> bool:
     if (directory / "simulation.csv").exists():
         return False
 
-    # Look for subdirectories with the pattern <simulation>_<timestamp>
+    # Look for subdirectories with the pattern <simulation>-<17-digit-timestamp>
     for subdir in directory.iterdir():
         if subdir.is_dir() and parse_gating_directory_name(subdir.name):
             if (subdir / "simulation.csv").exists():
@@ -487,12 +491,83 @@ def is_multiple_reports_directory(directory: Path) -> bool:
     return False
 
 
+MAX_WRAPPER_DEPTH = 3
+
+
+def find_report_root(directory: Path, max_depth: int = MAX_WRAPPER_DEPTH) -> Path:
+    """Descend through wrapper directories to the actual Gatling report root.
+
+    A "wrapper" is a directory that has neither simulation.csv nor any
+    Gatling report subdirectory (matching <simulation>-<17-digit-timestamp>
+    with simulation.csv inside) but contains exactly one non-matching
+    subdirectory. Common case: `gh run download` artifacts that wrap the
+    Gatling report tree under one or more outer directories.
+
+    Stops as soon as the current directory is a single report (has
+    simulation.csv) or a multi-report parent (rule 2).
+
+    Errors when:
+      * the user-provided directory is not a directory
+      * descent finds multiple non-matching subdirs (ambiguous; we cannot
+        guess which one the user meant)
+      * descent exceeds max_depth without resolving
+
+    Symlinks encountered during descent are not followed; an explicitly
+    user-provided symlinked root is the user's choice and is honored.
+    """
+    if not directory.is_dir():
+        raise FileNotFoundError(f"not a directory: {directory}")
+
+    current = directory
+    for _ in range(max_depth + 1):
+        if (current / "simulation.csv").exists():
+            return current
+        if is_multiple_reports_directory(current):
+            return current
+
+        # Neither rule 1 nor rule 2 fires. Look for exactly one non-matching
+        # real (non-symlink) subdirectory to descend into.
+        candidates = [sub for sub in current.iterdir() if sub.is_dir() and not sub.is_symlink()]
+        if not candidates:
+            raise FileNotFoundError(
+                f"no Gatling report found in {directory}: {current} has no "
+                f"simulation.csv and no <simulation>-<timestamp> subdirectories"
+            )
+        if len(candidates) > 1:
+            names = ", ".join(sorted(c.name for c in candidates))
+            raise FileNotFoundError(
+                f"ambiguous directory layout at {current}: found multiple "
+                f"subdirectories ({names}); point gstat at one of them or at "
+                f"a parent containing <simulation>-<timestamp> directories directly"
+            )
+        current = candidates[0]
+
+    raise FileNotFoundError(
+        f"no Gatling report found in {directory}: descended {max_depth} "
+        f"levels without reaching a simulation.csv or a directory of "
+        f"<simulation>-<timestamp> subdirectories"
+    )
+
+
 def load_gatling_data(directory: Path, exclude: str = None) -> GatlingRuns:
     """Load all Gatling data from directory, handling both single and multi-directory cases.
+
+    Accepts:
+      * a single Gatling report directory (containing simulation.csv directly), or
+      * a directory containing one or more <simulation>-<timestamp> report
+        subdirectories, or
+      * an outer wrapper directory (e.g. `gh run download` output) that nests
+        one of the above up to a few levels deep.
 
     Builds an immutable GatlingRuns with simulations and runs sorted; consumers
     can rely on the data being complete and ordered.
     """
+    try:
+        report_root = find_report_root(directory)
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
     raw: dict[str, dict[str, GatlingRun]] = {}
 
     def ingest(subdir: Path) -> None:
@@ -502,8 +577,8 @@ def load_gatling_data(directory: Path, exclude: str = None) -> GatlingRuns:
         simulation, run_timestamp, run_data = loaded
         raw.setdefault(simulation, {})[run_timestamp] = run_data
 
-    if is_multiple_reports_directory(directory):
-        for subdir in directory.iterdir():
+    if is_multiple_reports_directory(report_root):
+        for subdir in report_root.iterdir():
             if not subdir.is_dir():
                 continue
 
@@ -517,7 +592,7 @@ def load_gatling_data(directory: Path, exclude: str = None) -> GatlingRuns:
                 print(f"Warning: Error processing {subdir}: {e}", file=sys.stderr)
                 continue
     else:
-        ingest(directory)
+        ingest(report_root)
 
     if not raw:
         print(f"No valid simulation data found in {directory}", file=sys.stderr)
@@ -1695,6 +1770,11 @@ the percentile value, Diff (other - baseline, in ms), and Change
 Each input may be followed by --label NAME to override the column header
 (default: the directory's basename).
 
+Each input directory follows the same accepted shapes as `gstat <dir>`:
+a directory with simulation.csv, a directory of <simulation>-<timestamp>
+reports, or a `gh run download` wrapper that nests one of the above
+up to 3 levels deep.
+
 Options:
   --percentile {50,75,95,99}  Percentile(s) to render. Repeat for multiple. Default: 50 and 95.
   --exclude STRING            Exclude report directories containing this string (e.g. 'warmup').
@@ -1871,7 +1951,11 @@ Examples:
     parser.add_argument(
         "report_directory",
         type=Path,
-        help="Directory containing simulation.csv file, or directory with multiple reports",
+        help=(
+            "Path to a Gatling report. Accepts: a directory with simulation.csv, "
+            "a directory of <simulation>-<timestamp> reports, or a `gh run download` "
+            "wrapper that nests one of the above up to 3 levels deep."
+        ),
     )
     parser.add_argument(
         "--plot",

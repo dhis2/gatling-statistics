@@ -207,12 +207,18 @@ gstat ../samples/ --plot --output plot.html
 
 ### Directory Structure
 
-The tool automatically detects whether you're providing a single report or multiple reports:
+The tool auto-detects the layout. Three shapes are accepted:
 
-* **Single Report**: Directory containing `simulation.csv` directly
-* **Multiple Reports**: Directory containing subdirectories named `<simulation>-<timestamp>`, each with their own `simulation.csv`
+* **Single Report**: Directory containing `simulation.csv` directly.
+* **Multiple Reports**: Directory containing subdirectories named
+`<simulation>-<timestamp>`, each with their own `simulation.csv`.
+* **Wrapper layout**: An outer directory that nests one of the above up to 3 levels deep.
+This is what `gh run download` produces (the artifact name wraps a `gatling-report-…`
+directory which wraps the `<simulation>-<timestamp>` directories). `gstat` descends
+through single non-matching subdirectories until it finds the report root.
 
 Example multiple reports structure:
+
 ```
 samples/
 ├── trackerexportertests-20250627064559771/
@@ -222,6 +228,20 @@ samples/
     ├── simulation.csv
     └── ...
 ```
+
+Example wrapper layout (the path you get from `gh run download`):
+
+```
+2.43.0-load-6users-300s-24555271744/                         ← wrapper (artifact name)
+└── gatling-report-…-attempt-1/                              ← wrapper (workflow plumbing)
+    ├── trackertest-…-warmup-1/simulation.csv
+    └── trackertest-…/simulation.csv
+```
+
+Pointing `gstat` at the outer wrapper, the inner `gatling-report-…/`, or any
+`trackertest-…/` directly all work. Descent errors out cleanly when it finds
+multiple non-matching subdirectories at any level (ambiguous: cannot guess
+which one you meant) or has to descend more than 3 levels.
 
 ## Prerequisites
 

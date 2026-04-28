@@ -43,41 +43,6 @@ is exactly the "only ANC paths" case from the release-note workflow. The bare-na
 case (`--exclude-request '^Login$'`) is still trivial because the full path equals
 the bare name when there is no group prefix.
 
-* **Accept the run wrapper directory, not the inner `gatling-report-…/trackertest-…`
-path.** Today both `gstat <dir>` and `gstat compare <dir> …` error with "simulation.csv
-not found" when pointed at the unzipped artifact directory. The wrapper is what `gh run
-download` produces and what users actually have on disk; the inner dir is workflow
-plumbing. Composing `"$run"/gatling-report-*/` for ~30 invocations was the single
-biggest paper cut.
-  * **Open**: reproduce the failure with a real `gh run download` artifact first. `gstat`
-already has `is_multiple_reports_directory` for nested layouts; the bug may be in the
-regex or the skip path rather than a missing feature.
-  * **Answer**: reproduced (re-confirmed 2026-04-27 during the 2.43 release-note
-regeneration). With a `gh run download` artifact at
-`runs/2.43.0-load-6users-300s-24555271744/`:
-
-    ```
-    $ gstat --exclude warmup runs/2.43.0-load-6users-300s-24555271744
-    Error: simulation.csv not found in 2.43.0-load-6users-300s-24555271744
-    ```
-
-    Working invocation today (the paper-cut workaround):
-
-    ```
-    $ gstat --exclude warmup runs/2.43.0-load-6users-300s-24555271744/gatling-report-*/
-    ```
-
-    Same shape for `gstat compare`. The wrapper contains exactly one child
-(`gatling-report-DHIS2-…-attempt-1/`) which itself contains two `trackertest-…` dirs
-(one warmup, one measured). So the actual layout is **three** levels deep: `wrapper /
-gatling-report-… / trackertest-…`. `is_multiple_reports_directory` likely only walks
-one level. Fix is in detection, not a new feature: descend through single-child dirs
-until a `trackertest-…` (or `simulation.csv`) is found, then treat the inner dir as
-the report root. `--exclude warmup` continues to filter at the leaf level. Add a
-regression test using a real artifact tree (one wrapper containing one
-`gatling-report-…/` containing two `trackertest-…/` subdirs, one with `warmup` in the
-name).
-
 * **Add Markdown table output to the default `gstat <dir>` command (in addition to CSV).**
 Same data, different format. Useful for pasting into PR descriptions and Jira tickets
 without the user having to invoke `gstat compare` against itself or pipe through a

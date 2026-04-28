@@ -7,7 +7,7 @@ To run: uv run python tests/test_gstat.py
 import io
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 import pandas as pd
@@ -210,10 +210,119 @@ user,Single Events,,,,1762133613933,,,,end,,,
                 )
 
 
+class TestLoader(unittest.TestCase):
+    """Directory-discovery and CSV-parsing tests for load_gatling_data.
+
+    Covers each shape under tests/fixtures/: flat-single, flat-multi, wrapped,
+    plus the invalid/* fixtures that should error cleanly.
+    """
+
+    FLAT_SINGLE = FIXTURES_ROOT / "flat-single"
+    FLAT_SINGLE_INNER = FLAT_SINGLE / "trackertest-20260424071214792-2.43.0-smoke-1u-1000req"
+    WRAPPED = FIXTURES_ROOT / "wrapped"
+    WRAPPED_INNER = (
+        WRAPPED / "gatling-report-DHIS2-20965-load-2.43.0-6users-300s-24555271744-attempt-1"
+    )
+    INVALID_EMPTY = FIXTURES_ROOT / "invalid" / "empty-dir"
+    INVALID_AMBIGUOUS = FIXTURES_ROOT / "invalid" / "ambiguous-wrappers"
+    INVALID_TOO_DEEP = FIXTURES_ROOT / "invalid" / "too-deep"
+
+    def test_flat_single_inner_dir_loads(self):
+        """Pointing at a directory that contains simulation.csv directly works."""
+        gatling_data = load_gatling_data(self.FLAT_SINGLE_INNER)
+        self.assertEqual(gatling_data.get_simulations(), ["trackertest"])
+        runs = gatling_data.get_run_timestamps("trackertest")
+        self.assertEqual(len(runs), 1)
+
+    def test_flat_single_parent_descends_one_level(self):
+        """Pointing at a parent that contains exactly one trackertest-… dir
+        descends into it."""
+        gatling_data = load_gatling_data(self.FLAT_SINGLE)
+        self.assertEqual(gatling_data.get_simulations(), ["trackertest"])
+        # The outer dir has exactly one child report; descent picks it.
+        self.assertEqual(len(gatling_data.get_run_timestamps("trackertest")), 1)
+
+    def test_flat_multi_loads_all_runs(self):
+        """A directory containing multiple trackertest-… dirs loads all of them."""
+        gatling_data = load_gatling_data(FIXTURES_PARENT)
+        self.assertEqual(len(gatling_data.get_run_timestamps("trackertest")), 2)
+
+    def test_flat_multi_with_exclude_filters_at_leaf(self):
+        """`exclude` matches against the leaf directory name, not the wrapper."""
+        gatling_data = load_gatling_data(FIXTURES_PARENT, exclude="warmup")
+        timestamps = gatling_data.get_run_timestamps("trackertest")
+        self.assertEqual(len(timestamps), 1)
+        # The remaining run is the non-warmup one.
+        self.assertNotIn(
+            "warmup", str(gatling_data.get_run("trackertest", timestamps[0]).directory)
+        )
+
+    def test_wrapped_layout_descends_through_wrapper(self):
+        """Regression for the gh run download bug: an outer wrapper containing
+        gatling-report-… containing two trackertest-… dirs must load both."""
+        gatling_data = load_gatling_data(self.WRAPPED)
+        self.assertEqual(len(gatling_data.get_run_timestamps("trackertest")), 2)
+
+    def test_wrapped_layout_with_exclude(self):
+        """`--exclude warmup` still works through descent."""
+        gatling_data = load_gatling_data(self.WRAPPED, exclude="warmup")
+        self.assertEqual(len(gatling_data.get_run_timestamps("trackertest")), 1)
+
+    def test_wrapped_inner_path_also_works(self):
+        """Pointing directly at the gatling-report-… dir bypasses descent."""
+        gatling_data = load_gatling_data(self.WRAPPED_INNER)
+        self.assertEqual(len(gatling_data.get_run_timestamps("trackertest")), 2)
+
+    def test_unknown_directory_name_falls_back(self):
+        """Directory whose name doesn't match <simulation>-<17-digit-timestamp>
+        falls back to simulation='unknown', run_timestamp='unknown'."""
+        # fmt: off
+        # ruff: noqa: E501
+        csv_content = """record_type,scenario_name,group_hierarchy,request_name,status,start_timestamp,end_timestamp,response_time_ms,error_message,event_type,duration_ms,cumulated_response_time_ms,is_incoming
+request,,,Login,OK,1,2,1,,,,,false
+"""
+        # fmt: on
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_dir = Path(tmpdir) / "no-timestamp-here"
+            test_dir.mkdir()
+            (test_dir / "simulation.csv").write_text(csv_content)
+            gatling_data = load_gatling_data(test_dir)
+            self.assertEqual(gatling_data.get_simulations(), ["unknown"])
+            self.assertEqual(gatling_data.get_run_timestamps("unknown"), ["unknown"])
+
+    def test_empty_directory_errors_cleanly(self):
+        """A directory with no simulation.csv and no subdirectories exits 1
+        with a message naming the directory."""
+        err = io.StringIO()
+        with self.assertRaises(SystemExit) as cm, redirect_stderr(err):
+            load_gatling_data(self.INVALID_EMPTY)
+        self.assertEqual(cm.exception.code, 1)
+        self.assertIn("empty-dir", err.getvalue())
+
+    def test_ambiguous_wrappers_error(self):
+        """Two non-matching subdirs at descent depth → error, no silent pick."""
+        err = io.StringIO()
+        with self.assertRaises(SystemExit) as cm, redirect_stderr(err):
+            load_gatling_data(self.INVALID_AMBIGUOUS)
+        self.assertEqual(cm.exception.code, 1)
+        msg = err.getvalue()
+        self.assertIn("ambiguous", msg)
+        self.assertIn("gatling-report-A", msg)
+        self.assertIn("gatling-report-B", msg)
+
+    def test_too_deep_errors(self):
+        """More than max_depth wrapper layers → error citing the depth limit."""
+        err = io.StringIO()
+        with self.assertRaises(SystemExit) as cm, redirect_stderr(err):
+            load_gatling_data(self.INVALID_TOO_DEEP)
+        self.assertEqual(cm.exception.code, 1)
+        self.assertIn("3 levels", err.getvalue())
+
+
 class TestGatlingHtmlOrdering(unittest.TestCase):
     """Verify order_requests_gatling_html matches Gatling's HTML statistics table order.
 
-    Input: the real glog-CSV at tests/fixtures/trackertest-20260424071214792-2.43.0-smoke-1u-1000req/
+    Input: the real glog-CSV at tests/fixtures/flat-multi/trackertest-20260424071214792-2.43.0-smoke-1u-1000req/
     (downloaded from the CI run gatling-report-2.43.0-smoke-1u-1000req-24876465016-attempt-1).
     Expected output: the order extracted from that run's index.html (subgroups
     before leaves at each level; within each bucket the order of first
