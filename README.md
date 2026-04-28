@@ -8,9 +8,21 @@ A Python CLI tool that calculates and plots statistics like percentiles (min, 50
 * **Exact Percentiles**: Uses NumPy over the full sample, so results are reproducible
 * **Multiple Reports Support**: Process single reports or directories containing multiple simulation
 runs
+* **Run Comparison**: Render Markdown tables comparing percentiles across two or more runs with
+diffs and percentage change
 * **Easy Installation**: Install globally like a binary using `uv`
 * **CSV Output**: Outputs percentile data as CSV to console
 * **Interactive Plotting**: Generate interactive HTML plots with simulation and request filtering
+
+## Prerequisites
+
+* **uv**: Python package and project manager https://docs.astral.sh/uv
+* **Python**: Python 3.13 or higher (managed automatically by uv)
+* **Binary Log Conversion**: Since Gatling 3.12 ([issue
+#4596](https://github.com/gatling/gatling/issues/4596)), Gatling writes test results to binary
+format. You must convert `simulation.log` to `simulation.csv` using our fork's CLI tool available
+at https://github.com/dhis2/gatling/tree/glog-cli. Releases can be downloaded from
+https://github.com/dhis2/gatling/releases.
 
 ## Installation
 
@@ -50,20 +62,113 @@ uv sync
 uv run gstat <report_directory>
 ```
 
+## Directory layout
+
+The tool auto-detects the layout. Three shapes are accepted:
+
+* **Single Report**: Directory containing `simulation.csv` directly.
+* **Multiple Reports**: Directory containing subdirectories named
+`<simulation>-<timestamp>`, each with their own `simulation.csv`.
+* **Wrapper layout**: An outer directory that nests one of the above up to 3 levels deep.
+This is what `gh run download` produces (the artifact name wraps a `gatling-report-…`
+directory which wraps the `<simulation>-<timestamp>` directories). `gstat` descends
+through single non-matching subdirectories until it finds the report root.
+
+Example multiple reports structure:
+
+```
+samples/
+├── trackerexportertests-20250627064559771/
+│   ├── simulation.csv
+│   └── ...
+└── trackerexportertests-20250627095400668/
+    ├── simulation.csv
+    └── ...
+```
+
+Example wrapper layout (the path you get from `gh run download`):
+
+```
+2.43.0-load-6users-300s-24555271744/                         ← outer wrapper (gh artifact name)
+└── gatling-report-…-attempt-1/                              ← inner wrapper (added by the CI workflow)
+    ├── trackertest-…-warmup-1/simulation.csv
+    └── trackertest-…/simulation.csv
+```
+
+Pointing `gstat` at the outer wrapper, the inner `gatling-report-…/`, or any
+`trackertest-…/` directly all work. Descent errors out cleanly when it finds
+multiple non-matching subdirectories at any level (ambiguous: cannot guess
+which one you meant) or has to descend more than 3 levels.
+
 ## Usage
 
-Output percentiles per simulation, run and request name as CSV
+### Default: per-run CSV
+
+Output percentiles per simulation, run and request name as CSV:
 
 ```sh
 gstat <report_directory>
 ```
 
-* You must convert the binary `simulation.log` into a `simulation.csv`.
-* You must point to a report directory created by Gatling like
-`target/gatling/<simulation>_<timestamp>`. Either a single report directory or a directory
-containing multiple report directories.
+`<report_directory>` is a Gatling report directory (any of the layouts in [Directory
+layout](#directory-layout)).
 
-### CSV Output Format
+### Combining runs (`--combine`)
+
+When the input has more than one report directory (e.g. five CI runs of the same scenario)
+the default output is one row per (run, request). To collapse those into one row per request
+with percentiles computed over the combined samples, pass `--combine`:
+
+```sh
+gstat --combine ./baseline                        # 5 runs → 1 row per request
+gstat --combine --exclude warmup ./baseline       # drop warmup runs first
+```
+
+The combined output drops the `run_timestamp` column. `count` is the sum across runs.
+Percentiles are computed over the combined response times, not averaged from per-run
+percentiles.
+
+### Comparing runs (`compare`)
+
+Generate a Markdown comparison table across two or more runs (first input is the baseline,
+deltas are computed against it):
+
+```sh
+# Two-run baseline vs candidate
+gstat compare ./baseline ./candidate
+
+# Three runs compared
+gstat compare \
+  ./run-2.41.8 --label 2.41.8 \
+  ./run-2.42.4 --label 2.42.4 \
+  ./run-2.43.0 --label 2.43.0 \
+  --percentile 95
+```
+
+Output is one Markdown table per percentile (default p50 and p95) with `Diff` and `Change`
+columns per non-baseline input. Use `--no-diff` or `--no-change` to omit either column. If a
+run directory contains warmup subdirectories you want to skip, pass `--exclude warmup`.
+
+See `gstat compare --help` for the full option list.
+
+### Plotting (`--plot`)
+
+Generate interactive HTML plots instead of CSV output. `--plot` requires a plot type:
+
+```sh
+# Distribution histogram (open in browser)
+gstat --plot distribution ./samples/
+
+# Save plot to file
+gstat --plot distribution ./samples/ --output plot.html
+```
+
+Available plot types: `distribution`, `stacked`, `scatter`, `scatter-all`, `timeline`. Run
+`gstat --help` for descriptions of each.
+
+## Reference
+
+### CSV output columns
 
 * `simulation`: Name of the simulation extracted from directory name
 * `run_timestamp`: Timestamp of the run extracted from directory name
@@ -84,7 +189,7 @@ trackerexportertests,20250627064559771,events,38,38,0,320,357,380,557,1258,1258
 trackerexportertests,20250627095400668,events,7,5,2,2138,2346,2383,3345,3345,3345
 ```
 
-### Status handling
+### Status handling (OK / KO)
 
 Percentiles are computed over **all** request rows (OK and KO together), not just the OK
 subset. Filtering to OK would silently bias the sample toward survivors (the same row in
@@ -106,22 +211,7 @@ not meaningful." The numbers are still in the table for transparency; the KO col
 you whether to trust them. This matches Gatling's HTML summary table, which also computes
 percentiles over the full (OK + KO) population.
 
-### Combining multiple runs
-
-When the input has more than one report directory (e.g. five CI runs of the same scenario)
-the default output is one row per (run, request). To collapse those into one row per request
-with percentiles computed over the combined samples, pass `--combine`:
-
-```sh
-gstat --combine ./baseline                        # 5 runs → 1 row per request
-gstat --combine --exclude warmup ./baseline       # drop warmup runs first
-```
-
-The combined output drops the `run_timestamp` column. `count` is the sum across runs.
-Percentiles are computed over the combined response times, not averaged from per-run
-percentiles.
-
-### Percentiles
+### Percentile method
 
 `gstat` uses
 [`numpy.percentile`](https://numpy.org/doc/stable/reference/generated/numpy.percentile.html)
@@ -171,87 +261,6 @@ bimodal distribution (~90 ms vs ~3 s modes):
 So Gatling's HTML is fine for healthy populations and routine sweeps, but on small-sample
 or heavy-tailed scenarios the answer can be off by tens of percent. Watch the `count`
 column to know when you are in that territory.
-
-### Comparing runs
-
-Generate a Markdown comparison table across two or more runs (first input is the baseline,
-deltas are computed against it):
-
-```sh
-# Two-run baseline vs candidate
-gstat compare ./baseline ./candidate
-
-# Three runs compared
-gstat compare \
-  ./run-2.41.8 --label 2.41.8 \
-  ./run-2.42.4 --label 2.42.4 \
-  ./run-2.43.0 --label 2.43.0 \
-  --percentile 95
-```
-
-Output is one Markdown table per percentile (default p50 and p95) with `Diff` and `Change`
-columns per non-baseline input. If a run directory contains warmup subdirectories you want
-to skip, pass `--exclude warmup`.
-
-### Plotting
-
-Generate interactive HTML plots instead of CSV output:
-
-```sh
-# Generate plot and open in browser
-gstat ../samples/ --plot
-
-# Save plot to file
-gstat ../samples/ --plot --output plot.html
-```
-
-### Directory Structure
-
-The tool auto-detects the layout. Three shapes are accepted:
-
-* **Single Report**: Directory containing `simulation.csv` directly.
-* **Multiple Reports**: Directory containing subdirectories named
-`<simulation>-<timestamp>`, each with their own `simulation.csv`.
-* **Wrapper layout**: An outer directory that nests one of the above up to 3 levels deep.
-This is what `gh run download` produces (the artifact name wraps a `gatling-report-…`
-directory which wraps the `<simulation>-<timestamp>` directories). `gstat` descends
-through single non-matching subdirectories until it finds the report root.
-
-Example multiple reports structure:
-
-```
-samples/
-├── trackerexportertests-20250627064559771/
-│   ├── simulation.csv
-│   └── ...
-└── trackerexportertests-20250627095400668/
-    ├── simulation.csv
-    └── ...
-```
-
-Example wrapper layout (the path you get from `gh run download`):
-
-```
-2.43.0-load-6users-300s-24555271744/                         ← outer wrapper (gh artifact name)
-└── gatling-report-…-attempt-1/                              ← inner wrapper (added by the CI workflow)
-    ├── trackertest-…-warmup-1/simulation.csv
-    └── trackertest-…/simulation.csv
-```
-
-Pointing `gstat` at the outer wrapper, the inner `gatling-report-…/`, or any
-`trackertest-…/` directly all work. Descent errors out cleanly when it finds
-multiple non-matching subdirectories at any level (ambiguous: cannot guess
-which one you meant) or has to descend more than 3 levels.
-
-## Prerequisites
-
-* **uv**: Python package and project manager https://docs.astral.sh/uv
-* **Python**: Python 3.13 or higher (managed automatically by uv)
-* **Binary Log Conversion**: Since Gatling 3.12 ([issue
-#4596](https://github.com/gatling/gatling/issues/4596)), Gatling writes test results to binary
-format. You must convert `simulation.log` to `simulation.csv` using our fork's CLI tool available
-at https://github.com/dhis2/gatling/tree/glog-cli. Releases can be downloaded from
-https://github.com/dhis2/gatling/releases.
 
 ## Shell Autocompletion
 
@@ -337,13 +346,13 @@ This project uses pre-commit hooks to ensure code quality. The hooks automatical
 
 These hooks run automatically on `git commit`. To bypass temporarily: `git commit --no-verify`
 
-### Releasing New Versions
+## Releasing
 
 This project uses setuptools-scm for dynamic versioning from git tags. Version is automatically
 generated at build/install time from git tags in format `v0.1.0` and can be checked with `gstat
 --version`.
 
-#### Creating a Release
+### Creating a Release
 
 Use the interactive release script:
 
@@ -359,7 +368,7 @@ The script will:
 4. Create an annotated git tag
 5. Push the tag to GitHub (required for users to install the release)
 
-#### How Versioning Works
+### How Versioning Works
 
 * **On a tagged commit**: `gstat --version` shows `0.2.0` (clean release version)
 * **After commits**: `gstat --version` shows `0.2.1.dev1+g20bb26c` (development version with SHA)
@@ -367,4 +376,3 @@ The script will:
 
 setuptools-scm automatically generates the version at build time, so no version files need to be
 committed to the repository.
-
