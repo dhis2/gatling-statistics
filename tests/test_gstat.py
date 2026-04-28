@@ -152,7 +152,7 @@ user,Single Events,,,,1762133613933,,,,end,,,
             gatling_data = load_gatling_data(Path(tmpdir))
 
             simulation = gatling_data.get_simulations()[0]
-            run = gatling_data.get_runs(simulation)[0]
+            run = gatling_data.get_run_timestamps(simulation)[0]
             actual_requests = gatling_data.get_requests(simulation, run)
 
             # Map of full_request_path -> (count, response_times, mean)
@@ -203,7 +203,7 @@ user,Single Events,,,,1762133613933,,,,end,,,
                 expected_times,
                 expected_mean,
             ) in expected_requests.items():
-                data = gatling_data.get_request_data(simulation, run, full_path)
+                data = gatling_data.get_request(simulation, run, full_path)
                 self.assertEqual(data.count, expected_count, f"Wrong count for {full_path}")
                 self.assertEqual(
                     data.response_times, expected_times, f"Wrong times for {full_path}"

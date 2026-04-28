@@ -138,7 +138,7 @@ def calculate_percentiles(response_times: list[float]) -> dict[str, float]:
     }
 
 
-class RequestData(NamedTuple):
+class GatlingRequest(NamedTuple):
     """Data for a specific request in a specific run."""
 
     response_times: list[float]
@@ -151,7 +151,7 @@ class RequestData(NamedTuple):
 
 
 @dataclass(frozen=True, slots=True)
-class RunData:
+class GatlingRun:
     """Data for a complete simulation run.
 
     Constructed once by the loader with all requests already in Gatling HTML
@@ -163,25 +163,25 @@ class RunData:
     datetime_timestamp: datetime
     directory: Path
     suffix: str
-    requests: OrderedDict[str, RequestData]
+    requests: OrderedDict[str, GatlingRequest]
 
 
 @dataclass(frozen=True, slots=True)
-class GatlingData:
+class GatlingRuns:
     """Unified data structure for all Gatling performance data.
 
-    Structure: {simulation: {run_timestamp: RunData}}, sorted at construction.
+    Structure: {simulation: {run_timestamp: GatlingRun}}, sorted at construction.
     Treat as read-only.
     """
 
     report_directory: Path | None
-    data: OrderedDict[str, OrderedDict[str, RunData]]
+    data: OrderedDict[str, OrderedDict[str, GatlingRun]]
 
     def get_simulations(self) -> list[str]:
         """Get all simulation names in sorted order."""
         return list(self.data.keys())
 
-    def get_runs(self, simulation: str) -> list[str]:
+    def get_run_timestamps(self, simulation: str) -> list[str]:
         """Get all run timestamps for a simulation in sorted order."""
         return list(self.data.get(simulation, {}).keys())
 
@@ -190,14 +190,14 @@ class GatlingData:
         run_data = self.data.get(simulation, {}).get(run_timestamp)
         return list(run_data.requests.keys()) if run_data else []
 
-    def get_request_data(
+    def get_request(
         self, simulation: str, run_timestamp: str, request_name: str
-    ) -> RequestData | None:
+    ) -> GatlingRequest | None:
         """Get request data for specific simulation/run/request."""
         run_data = self.data.get(simulation, {}).get(run_timestamp)
         return run_data.requests.get(request_name) if run_data else None
 
-    def get_run_data(self, simulation: str, run_timestamp: str) -> RunData | None:
+    def get_run(self, simulation: str, run_timestamp: str) -> GatlingRun | None:
         """Get run data for specific simulation/run."""
         return self.data.get(simulation, {}).get(run_timestamp)
 
@@ -289,7 +289,7 @@ def create_dropdown_buttons(
 
 def create_plot_dropdowns(
     plot_type: str,
-    gatling_data: GatlingData,
+    gatling_data: GatlingRuns,
     trace_mapping: dict,
     fig_data_length: int,
     defaults: dict,
@@ -322,7 +322,7 @@ def create_plot_dropdowns(
                 return truncate_string(req, 100)
 
         elif dropdown_type == "timestamp":
-            items = gatling_data.get_runs(defaults["simulation"])
+            items = gatling_data.get_run_timestamps(defaults["simulation"])
 
             def get_visibility_fn(run):
                 return _get_run_visibility(
@@ -344,14 +344,14 @@ def create_plot_dropdowns(
 
 
 def _get_all_requests_for_plot(
-    gatling_data: GatlingData, defaults: dict, plot_type: str
+    gatling_data: GatlingRuns, defaults: dict, plot_type: str
 ) -> list[str]:
     """Get all request names for the plot type."""
     if plot_type == "stacked":
         # Stacked uses all requests across all simulations
         all_requests = set()
         for simulation in gatling_data.get_simulations():
-            for run_timestamp in gatling_data.get_runs(simulation):
+            for run_timestamp in gatling_data.get_run_timestamps(simulation):
                 all_requests.update(gatling_data.get_requests(simulation, run_timestamp))
         return sorted(all_requests)
     else:
@@ -361,7 +361,7 @@ def _get_all_requests_for_plot(
 
 def _get_simulation_visibility(
     simulation: str,
-    gatling_data: GatlingData,
+    gatling_data: GatlingRuns,
     trace_mapping: dict,
     fig_data_length: int,
     defaults: dict,
@@ -383,7 +383,7 @@ def _get_simulation_visibility(
                         visibility[j] = True
     else:
         # Distribution/scatter: show first run and first request for this simulation
-        sim_runs = gatling_data.get_runs(simulation)
+        sim_runs = gatling_data.get_run_timestamps(simulation)
         if sim_runs:
             first_run = sim_runs[0]
             sim_requests = gatling_data.get_requests(simulation, first_run)
@@ -406,7 +406,7 @@ def _get_simulation_visibility(
 
 def _get_request_visibility(
     request: str,
-    gatling_data: GatlingData,
+    gatling_data: GatlingRuns,
     trace_mapping: dict,
     fig_data_length: int,
     defaults: dict,
@@ -437,7 +437,7 @@ def _get_request_visibility(
 
 def _get_run_visibility(
     run: str,
-    gatling_data: GatlingData,
+    gatling_data: GatlingRuns,
     trace_mapping: dict,
     fig_data_length: int,
     defaults: dict,
@@ -457,9 +457,9 @@ def _get_run_visibility(
     return visibility
 
 
-def _get_run_label(run: str, gatling_data: GatlingData, simulation: str) -> str:
+def _get_run_label(run: str, gatling_data: GatlingRuns, simulation: str) -> str:
     """Get formatted label for a run timestamp, including suffix if present."""
-    run_data = gatling_data.get_run_data(simulation, run)
+    run_data = gatling_data.get_run(simulation, run)
     if not run_data:
         return run
 
@@ -487,13 +487,13 @@ def is_multiple_reports_directory(directory: Path) -> bool:
     return False
 
 
-def load_gatling_data(directory: Path, exclude: str = None) -> GatlingData:
+def load_gatling_data(directory: Path, exclude: str = None) -> GatlingRuns:
     """Load all Gatling data from directory, handling both single and multi-directory cases.
 
-    Builds an immutable GatlingData with simulations and runs sorted; consumers
+    Builds an immutable GatlingRuns with simulations and runs sorted; consumers
     can rely on the data being complete and ordered.
     """
-    raw: dict[str, dict[str, RunData]] = {}
+    raw: dict[str, dict[str, GatlingRun]] = {}
 
     def ingest(subdir: Path) -> None:
         loaded = _load_single_directory(subdir)
@@ -523,10 +523,10 @@ def load_gatling_data(directory: Path, exclude: str = None) -> GatlingData:
         print(f"No valid simulation data found in {directory}", file=sys.stderr)
         sys.exit(1)
 
-    sorted_data: OrderedDict[str, OrderedDict[str, RunData]] = OrderedDict(
+    sorted_data: OrderedDict[str, OrderedDict[str, GatlingRun]] = OrderedDict(
         (sim, OrderedDict(sorted(runs.items()))) for sim, runs in sorted(raw.items())
     )
-    return GatlingData(report_directory=directory, data=sorted_data)
+    return GatlingRuns(report_directory=directory, data=sorted_data)
 
 
 def order_requests_gatling_html(df: pd.DataFrame) -> list[tuple[str, str]]:
@@ -577,11 +577,11 @@ def order_requests_gatling_html(df: pd.DataFrame) -> list[tuple[str, str]]:
     return ordered
 
 
-def _load_single_directory(directory: Path) -> tuple[str, str, RunData] | None:
+def _load_single_directory(directory: Path) -> tuple[str, str, GatlingRun] | None:
     """Load Gatling data from a directory directly containing one simulation.csv.
 
-    Returns (simulation, run_timestamp, RunData) ready to be inserted into
-    GatlingData, or None if the directory has no simulation.csv to read.
+    Returns (simulation, run_timestamp, GatlingRun) ready to be inserted into
+    GatlingRuns, or None if the directory has no simulation.csv to read.
     """
     parsed = parse_gating_directory_name(directory.name)
     if parsed:
@@ -602,7 +602,7 @@ def _load_single_directory(directory: Path) -> tuple[str, str, RunData] | None:
     ordered_keys = order_requests_gatling_html(df)
     groups = dict(list(df.groupby(["group_hierarchy", "request_name"], sort=False)))
 
-    requests: OrderedDict[str, RequestData] = OrderedDict()
+    requests: OrderedDict[str, GatlingRequest] = OrderedDict()
     for group_hierarchy, request_name in ordered_keys:
         group = groups[(group_hierarchy, request_name)]
         # Compose the display path using Gatling's HTML separator (" / "), with
@@ -620,7 +620,7 @@ def _load_single_directory(directory: Path) -> tuple[str, str, RunData] | None:
         ok_count = int((group["status"] == "OK").sum())
         ko_count = count - ok_count
 
-        requests[full_path] = RequestData(
+        requests[full_path] = GatlingRequest(
             response_times=response_times,
             timestamps=timestamps,
             percentiles=percentiles,
@@ -630,7 +630,7 @@ def _load_single_directory(directory: Path) -> tuple[str, str, RunData] | None:
             ko_count=ko_count,
         )
 
-    run_data = RunData(
+    run_data = GatlingRun(
         raw_timestamp=run_timestamp,
         formatted_timestamp=format_timestamp(run_timestamp),
         datetime_timestamp=parse_gatling_directory_timestamp(run_timestamp),
@@ -641,7 +641,7 @@ def _load_single_directory(directory: Path) -> tuple[str, str, RunData] | None:
     return simulation, run_timestamp, run_data
 
 
-def plot_percentiles_stacked(gatling_data: GatlingData) -> go.Figure:
+def plot_percentiles_stacked(gatling_data: GatlingRuns) -> go.Figure:
     """Plot stacked bar chart of percentiles across runs."""
 
     if not gatling_data.data:
@@ -650,7 +650,7 @@ def plot_percentiles_stacked(gatling_data: GatlingData) -> go.Figure:
     simulations = gatling_data.get_simulations()
     all_requests = set()
     for simulation in simulations:
-        for run_timestamp in gatling_data.get_runs(simulation):
+        for run_timestamp in gatling_data.get_run_timestamps(simulation):
             all_requests.update(gatling_data.get_requests(simulation, run_timestamp))
     all_requests = sorted(all_requests)
 
@@ -670,7 +670,7 @@ def plot_percentiles_stacked(gatling_data: GatlingData) -> go.Figure:
         for request_name in all_requests:
             # Check if this simulation has this request
             runs_with_request = []
-            for run_timestamp in gatling_data.get_runs(simulation):
+            for run_timestamp in gatling_data.get_run_timestamps(simulation):
                 if request_name in gatling_data.get_requests(simulation, run_timestamp):
                     runs_with_request.append(run_timestamp)
 
@@ -693,12 +693,10 @@ def plot_percentiles_stacked(gatling_data: GatlingData) -> go.Figure:
             }
 
             for run_number, run_timestamp in enumerate(runs_with_request, 1):
-                request_data = gatling_data.get_request_data(
-                    simulation, run_timestamp, request_name
-                )
+                request_data = gatling_data.get_request(simulation, run_timestamp, request_name)
                 if request_data:
                     run_timestamps.append(run_timestamp)
-                    run_data = gatling_data.get_run_data(simulation, run_timestamp)
+                    run_data = gatling_data.get_run(simulation, run_timestamp)
                     hover_label = run_data.formatted_timestamp if run_data else run_timestamp
                     run_hover_labels.append(hover_label)
                     run_directories.append(str(run_data.directory.absolute()))
@@ -774,7 +772,7 @@ def plot_percentiles_stacked(gatling_data: GatlingData) -> go.Figure:
 
             # Add mean line immediately after bars for this request
             mean_values = [
-                gatling_data.get_request_data(simulation, run_timestamp, request_name).mean
+                gatling_data.get_request(simulation, run_timestamp, request_name).mean
                 for run_timestamp in runs_with_request
             ]
 
@@ -821,7 +819,7 @@ def plot_percentiles_stacked(gatling_data: GatlingData) -> go.Figure:
     return fig
 
 
-def plot_percentiles(gatling_data: GatlingData) -> go.Figure:
+def plot_percentiles(gatling_data: GatlingRuns) -> go.Figure:
     """Plot histogram of response times highlighting percentile ranges."""
     fig = make_subplots(rows=1, cols=1)
 
@@ -837,7 +835,7 @@ def plot_percentiles(gatling_data: GatlingData) -> go.Figure:
     default_request = None
 
     if default_simulation:
-        runs = gatling_data.get_runs(default_simulation)
+        runs = gatling_data.get_run_timestamps(default_simulation)
         default_run = runs[0] if runs else None
 
         if default_run:
@@ -852,11 +850,9 @@ def plot_percentiles(gatling_data: GatlingData) -> go.Figure:
     trace_idx = 0
 
     for simulation in simulations:
-        for run_timestamp in gatling_data.get_runs(simulation):
+        for run_timestamp in gatling_data.get_run_timestamps(simulation):
             for request_name in gatling_data.get_requests(simulation, run_timestamp):
-                request_data = gatling_data.get_request_data(
-                    simulation, run_timestamp, request_name
-                )
+                request_data = gatling_data.get_request(simulation, run_timestamp, request_name)
 
                 if not request_data or not request_data.response_times:
                     continue
@@ -876,7 +872,7 @@ def plot_percentiles(gatling_data: GatlingData) -> go.Figure:
                 bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
                 # Get run directory for click-to-copy functionality
-                run_data = gatling_data.get_run_data(simulation, run_timestamp)
+                run_data = gatling_data.get_run(simulation, run_timestamp)
                 run_directory = str(run_data.directory.absolute())
 
                 # Calculate percentage for each bucket
@@ -992,7 +988,7 @@ def plot_percentiles(gatling_data: GatlingData) -> go.Figure:
     return fig
 
 
-def plot_scatter(gatling_data: GatlingData) -> go.Figure:
+def plot_scatter(gatling_data: GatlingRuns) -> go.Figure:
     """Plot response times."""
 
     fig = go.Figure()
@@ -1008,7 +1004,7 @@ def plot_scatter(gatling_data: GatlingData) -> go.Figure:
     default_request = None
 
     if default_simulation:
-        runs = gatling_data.get_runs(default_simulation)
+        runs = gatling_data.get_run_timestamps(default_simulation)
         default_run = runs[0] if runs else None
 
         if default_run:
@@ -1023,11 +1019,9 @@ def plot_scatter(gatling_data: GatlingData) -> go.Figure:
     trace_idx = 0
 
     for simulation in simulations:
-        for run_timestamp in gatling_data.get_runs(simulation):
+        for run_timestamp in gatling_data.get_run_timestamps(simulation):
             for request_name in gatling_data.get_requests(simulation, run_timestamp):
-                request_data = gatling_data.get_request_data(
-                    simulation, run_timestamp, request_name
-                )
+                request_data = gatling_data.get_request(simulation, run_timestamp, request_name)
 
                 if not request_data or not request_data.timestamps:
                     continue
@@ -1037,7 +1031,7 @@ def plot_scatter(gatling_data: GatlingData) -> go.Figure:
                 response_times = request_data.response_times
 
                 # Get run directory for click-to-copy functionality
-                run_data = gatling_data.get_run_data(simulation, run_timestamp)
+                run_data = gatling_data.get_run(simulation, run_timestamp)
                 run_directory = str(run_data.directory.absolute())
 
                 # Create request numbers (1-indexed)
@@ -1158,7 +1152,7 @@ def plot_scatter(gatling_data: GatlingData) -> go.Figure:
     return fig
 
 
-def plot_timeline(gatling_data: GatlingData) -> go.Figure:
+def plot_timeline(gatling_data: GatlingRuns) -> go.Figure:
     """Plot timeline chart showing request duration as horizontal bars."""
 
     fig = go.Figure()
@@ -1174,7 +1168,7 @@ def plot_timeline(gatling_data: GatlingData) -> go.Figure:
     default_request = None
 
     if default_simulation:
-        runs = gatling_data.get_runs(default_simulation)
+        runs = gatling_data.get_run_timestamps(default_simulation)
         default_run = runs[0] if runs else None
 
         if default_run:
@@ -1190,11 +1184,9 @@ def plot_timeline(gatling_data: GatlingData) -> go.Figure:
     max_duration = 0
 
     for simulation in simulations:
-        for run_timestamp in gatling_data.get_runs(simulation):
+        for run_timestamp in gatling_data.get_run_timestamps(simulation):
             for request_name in gatling_data.get_requests(simulation, run_timestamp):
-                request_data = gatling_data.get_request_data(
-                    simulation, run_timestamp, request_name
-                )
+                request_data = gatling_data.get_request(simulation, run_timestamp, request_name)
 
                 if not request_data or not request_data.timestamps:
                     continue
@@ -1204,7 +1196,7 @@ def plot_timeline(gatling_data: GatlingData) -> go.Figure:
                 response_times = request_data.response_times
 
                 # Get run directory for click-to-copy functionality
-                run_data = gatling_data.get_run_data(simulation, run_timestamp)
+                run_data = gatling_data.get_run(simulation, run_timestamp)
                 run_directory = str(run_data.directory.absolute())
 
                 # Create request numbers (1-indexed)
@@ -1299,7 +1291,7 @@ def plot_timeline(gatling_data: GatlingData) -> go.Figure:
     return fig
 
 
-def plot_scatter_all(gatling_data: GatlingData) -> go.Figure:
+def plot_scatter_all(gatling_data: GatlingRuns) -> go.Figure:
     """Plot response times for all runs, each run with different color."""
 
     fig = go.Figure()
@@ -1313,11 +1305,9 @@ def plot_scatter_all(gatling_data: GatlingData) -> go.Figure:
         return fig
 
     for simulation in simulations:
-        for run_number, run_timestamp in enumerate(gatling_data.get_runs(simulation), 1):
+        for run_number, run_timestamp in enumerate(gatling_data.get_run_timestamps(simulation), 1):
             for request_name in gatling_data.get_requests(simulation, run_timestamp):
-                request_data = gatling_data.get_request_data(
-                    simulation, run_timestamp, request_name
-                )
+                request_data = gatling_data.get_request(simulation, run_timestamp, request_name)
 
                 if not request_data or not request_data.timestamps:
                     continue
@@ -1326,7 +1316,7 @@ def plot_scatter_all(gatling_data: GatlingData) -> go.Figure:
                 response_times = request_data.response_times
 
                 # Get run directory and formatted timestamp for click-to-copy functionality
-                run_data = gatling_data.get_run_data(simulation, run_timestamp)
+                run_data = gatling_data.get_run(simulation, run_timestamp)
                 run_directory = str(run_data.directory.absolute())
                 run_directory_name = run_data.directory.name
                 run_hover_label = run_data.formatted_timestamp if run_data else run_timestamp
@@ -1397,7 +1387,7 @@ class CompareInput(NamedTuple):
     ok_ko_counts: dict[str, tuple[int, int]]  # {request_name: (ok_count, ko_count)}
 
 
-class CombinedRequest(NamedTuple):
+class GatlingCombinedRequest(NamedTuple):
     """Per-request data combined across all simulations and runs of one input."""
 
     response_times: list[float]
@@ -1405,22 +1395,22 @@ class CombinedRequest(NamedTuple):
     ko_count: int
 
 
-def combine_request_data(gatling_data: GatlingData) -> dict[str, CombinedRequest]:
+def combine_request_data(gatling_data: GatlingRuns) -> dict[str, GatlingCombinedRequest]:
     """Combine response times and OK/KO counts across all simulations and runs.
 
-    Walks request data in the order GatlingData provides (Gatling's HTML report
+    Walks request data in the order GatlingRuns provides (Gatling's HTML report
     order), so dict insertion order is preserved for consumers that iterate.
     """
-    combined: dict[str, CombinedRequest] = {}
+    combined: dict[str, GatlingCombinedRequest] = {}
     for simulation in gatling_data.get_simulations():
-        for run_timestamp in gatling_data.get_runs(simulation):
+        for run_timestamp in gatling_data.get_run_timestamps(simulation):
             for request_name in gatling_data.get_requests(simulation, run_timestamp):
-                rd = gatling_data.get_request_data(simulation, run_timestamp, request_name)
+                rd = gatling_data.get_request(simulation, run_timestamp, request_name)
                 if rd is None:
                     continue
                 prev = combined.get(request_name)
                 if prev is None:
-                    combined[request_name] = CombinedRequest(
+                    combined[request_name] = GatlingCombinedRequest(
                         response_times=list(rd.response_times),
                         ok_count=rd.ok_count,
                         ko_count=rd.ko_count,
@@ -1570,7 +1560,7 @@ def format_compare_markdown(
     return "\n".join(lines) + "\n"
 
 
-def format_output(gatling_data: GatlingData) -> None:
+def format_output(gatling_data: GatlingRuns) -> None:
     """Format and print results as CSV."""
     print(
         "directory,simulation,run_timestamp,request_name,"
@@ -1578,8 +1568,8 @@ def format_output(gatling_data: GatlingData) -> None:
     )
 
     for simulation in gatling_data.get_simulations():
-        for run_timestamp in gatling_data.get_runs(simulation):
-            run_data = gatling_data.get_run_data(simulation, run_timestamp)
+        for run_timestamp in gatling_data.get_run_timestamps(simulation):
+            run_data = gatling_data.get_run(simulation, run_timestamp)
             if run_data:
                 for request_name, request_data in run_data.requests.items():
                     directory = run_data.directory.name
@@ -1596,7 +1586,7 @@ def format_output(gatling_data: GatlingData) -> None:
                     )
 
 
-def format_output_combined(gatling_data: GatlingData) -> None:
+def format_output_combined(gatling_data: GatlingRuns) -> None:
     """Format and print combined results as CSV (one row per request).
 
     Combines response times across all (simulation, run, request) tuples by request
