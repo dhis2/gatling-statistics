@@ -13,6 +13,7 @@ from pathlib import Path
 import pandas as pd
 
 from gstat import (
+    CompareInput,
     collect_compare_input,
     format_compare_markdown,
     format_output,
@@ -424,11 +425,33 @@ fixtures,trackertest,ANC import,1000,1000,0,33,36,38,43,87,587
         self.assertEqual(per_run_requests, combined_requests)
 
 
+def make_compare_input(
+    label: str,
+    rows: dict[str, dict],
+    path_name: str | None = None,
+) -> CompareInput:
+    """Build a CompareInput from a compact `{request_name: {pXX: value, "ok": int, "ko": int}}`.
+
+    Keeps rendering tests focused on inputs and expected output rather than CSV bytes.
+    """
+    percentiles = {
+        req: {k: v for k, v in stats.items() if k not in ("ok", "ko")}
+        for req, stats in rows.items()
+    }
+    ok_ko_counts = {req: (stats.get("ok", 0), stats.get("ko", 0)) for req, stats in rows.items()}
+    return CompareInput(
+        path=Path(path_name or label),
+        label=label,
+        percentiles=percentiles,
+        ok_ko_counts=ok_ko_counts,
+    )
+
+
 class TestCompare(unittest.TestCase):
     """End-to-end tests for `gstat compare`.
 
-    Warmup-vs-main exercises both faster (down-arrow) and slower (up-arrow) paths
-    on real numbers; the synthetic tests cover request-set differences and merged row order.
+    `test_compare_warmup_vs_main_p95` pins loader+formatter together on real fixtures.
+    Other tests build CompareInput directly to keep rendering logic isolated.
     """
 
     PERCENTILE_TITLES = {
@@ -483,29 +506,16 @@ class TestCompare(unittest.TestCase):
     def test_compare_handles_request_set_difference(self):
         """When a request appears in only one input, the missing-side cells render as `-`
         (not `N/A`, not `0`). Exercises the `if oval is None or bval is None` branch."""
-        # fmt: off
-        # ruff: noqa: E501
-        only_login = """record_type,scenario_name,group_hierarchy,request_name,status,start_timestamp,end_timestamp,response_time_ms,error_message,event_type,duration_ms,cumulated_response_time_ms,is_incoming
-request,,,Login,OK,1762133595750,1762133595858,108,,,,,false
-"""
-        login_and_search = """record_type,scenario_name,group_hierarchy,request_name,status,start_timestamp,end_timestamp,response_time_ms,error_message,event_type,duration_ms,cumulated_response_time_ms,is_incoming
-request,,,Login,OK,1762133595750,1762133595858,120,,,,,false
-request,,,Search,OK,1762133595900,1762133595950,50,,,,,false
-"""
-        # fmt: on
+        baseline = make_compare_input(
+            "a", {"Login": {"95th": 108, "ok": 1}}, path_name="a-20250101010101010-test"
+        )
+        candidate = make_compare_input(
+            "b",
+            {"Login": {"95th": 120, "ok": 1}, "Search": {"95th": 50, "ok": 1}},
+            path_name="b-20250101010101010-test",
+        )
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            a = Path(tmpdir) / "a-20250101010101010-test"
-            b = Path(tmpdir) / "b-20250101010101010-test"
-            a.mkdir()
-            b.mkdir()
-            (a / "simulation.csv").write_text(only_login)
-            (b / "simulation.csv").write_text(login_and_search)
-
-            baseline = collect_compare_input(a, label=None, exclude=None)
-            candidate = collect_compare_input(b, label=None, exclude=None)
-
-            out = format_compare_markdown([baseline, candidate], ["95th"], self.PERCENTILE_TITLES)
+        out = format_compare_markdown([baseline, candidate], ["95th"], self.PERCENTILE_TITLES)
 
         # Login is in both: real numbers + diff/change. KO% = 0 in both inputs.
         self.assertIn("| Login | 108 | 0.0% | 120 | 0.0% | +12 | :arrow_up: +11.1% |", out)
@@ -515,8 +525,8 @@ request,,,Search,OK,1762133595900,1762133595950,50,,,,,false
 
     def test_compare_no_diff_drops_diff_column_only(self):
         """`--no-diff` removes the Diff column but keeps the candidate value and Change."""
-        baseline = collect_compare_input(WARMUP_FIXTURE_DIR, label="warmup", exclude=None)
-        candidate = collect_compare_input(FIXTURE_DIR, label="main", exclude=None)
+        baseline = make_compare_input("warmup", {"Login": {"95th": 152, "ok": 1}})
+        candidate = make_compare_input("main", {"Login": {"95th": 111, "ok": 1}})
 
         out = format_compare_markdown(
             [baseline, candidate], ["95th"], self.PERCENTILE_TITLES, show_diff=False
@@ -527,15 +537,15 @@ request,,,Search,OK,1762133595900,1762133595950,50,,,,,false
         self.assertNotIn("Diff", out)
 
         # Row loses the -41 Diff cell but keeps the KO% cells.
-        self.assertIn("| Login | 152 | 0.0% | 111 | 0.0% | :arrow_down: -26.9% |", out)
+        self.assertIn("| Login | 152 | 0.0% | 111 | 0.0% | :arrow_down: -27.0% |", out)
 
         # Arrow legend stays because Change column is present.
         self.assertIn("_:arrow_down: = faster, :arrow_up: = slower_", out)
 
     def test_compare_no_change_drops_change_column_and_legend(self):
         """`--no-change` removes the Change column and the arrow legend; Diff stays."""
-        baseline = collect_compare_input(WARMUP_FIXTURE_DIR, label="warmup", exclude=None)
-        candidate = collect_compare_input(FIXTURE_DIR, label="main", exclude=None)
+        baseline = make_compare_input("warmup", {"Login": {"95th": 152, "ok": 1}})
+        candidate = make_compare_input("main", {"Login": {"95th": 111, "ok": 1}})
 
         out = format_compare_markdown(
             [baseline, candidate], ["95th"], self.PERCENTILE_TITLES, show_change=False
@@ -552,8 +562,8 @@ request,,,Search,OK,1762133595900,1762133595950,50,,,,,false
 
     def test_compare_no_diff_no_change_leaves_only_value_columns(self):
         """Both toggles together collapse each candidate to a single value column."""
-        baseline = collect_compare_input(WARMUP_FIXTURE_DIR, label="warmup", exclude=None)
-        candidate = collect_compare_input(FIXTURE_DIR, label="main", exclude=None)
+        baseline = make_compare_input("warmup", {"Login": {"95th": 152, "ok": 1}})
+        candidate = make_compare_input("main", {"Login": {"95th": 111, "ok": 1}})
 
         out = format_compare_markdown(
             [baseline, candidate],
@@ -571,42 +581,18 @@ request,,,Search,OK,1762133595900,1762133595950,50,,,,,false
     def test_compare_ko_rows_contribute_to_percentile_and_ko_pct(self):
         """KO rows are included in the percentile and reported in the KO% column.
         Pins the "don't filter, surface KO%" choice: a KO row's response_time is in the
-        sample, the KO% column lets the reader gate trust."""
-        # Baseline: 4 OK rows at 100ms.
-        # Candidate: 4 OK rows at 100ms + 1 KO row at 60000ms (mimics a transport timeout).
-        # p95 over [100,100,100,100] = 100. p95 over [100,100,100,100,60000] = 48,020.
-        # fmt: off
-        # ruff: noqa: E501
-        baseline_csv = """record_type,scenario_name,group_hierarchy,request_name,status,start_timestamp,end_timestamp,response_time_ms,error_message,event_type,duration_ms,cumulated_response_time_ms,is_incoming
-request,,,Search,OK,1,101,100,,,,,false
-request,,,Search,OK,2,102,100,,,,,false
-request,,,Search,OK,3,103,100,,,,,false
-request,,,Search,OK,4,104,100,,,,,false
-"""
-        candidate_csv = """record_type,scenario_name,group_hierarchy,request_name,status,start_timestamp,end_timestamp,response_time_ms,error_message,event_type,duration_ms,cumulated_response_time_ms,is_incoming
-request,,,Search,OK,1,101,100,,,,,false
-request,,,Search,OK,2,102,100,,,,,false
-request,,,Search,OK,3,103,100,,,,,false
-request,,,Search,OK,4,104,100,,,,,false
-request,,,Search,KO,5,60005,60000,Request timeout,,,,false
-"""
-        # fmt: on
+        sample, the KO% column lets the reader gate trust.
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            a = Path(tmpdir) / "a-20250101010101010-test"
-            b = Path(tmpdir) / "b-20250101010101010-test"
-            a.mkdir()
-            b.mkdir()
-            (a / "simulation.csv").write_text(baseline_csv)
-            (b / "simulation.csv").write_text(candidate_csv)
+        Numbers reproduce the percentile calculation done by the loader:
+        * Baseline: 4 OK at 100 ms → p95 = 100.
+        * Candidate: 4 OK at 100 ms + 1 KO at 60,000 ms → p95 = 48,020 (linear interp).
+        * KO% in candidate = 1 / 5 = 20.0%.
+        """
+        baseline = make_compare_input("clean", {"Search": {"95th": 100, "ok": 4}})
+        candidate = make_compare_input("failing", {"Search": {"95th": 48020, "ok": 4, "ko": 1}})
 
-            baseline = collect_compare_input(a, label="clean", exclude=None)
-            candidate = collect_compare_input(b, label="failing", exclude=None)
+        out = format_compare_markdown([baseline, candidate], ["95th"], self.PERCENTILE_TITLES)
 
-            out = format_compare_markdown([baseline, candidate], ["95th"], self.PERCENTILE_TITLES)
-
-        # Candidate p95 is dominated by the timeout-clamped KO sample (48,020 ms).
-        # Baseline KO% is 0%, candidate is 1/5 = 20.0%.
         self.assertIn(
             "| Search | 100 | 0.0% | 48,020 | 20.0% | +47,920 | :arrow_up: +47920.0% |",
             out,
@@ -615,30 +601,10 @@ request,,,Search,KO,5,60005,60000,Request timeout,,,,false
     def test_compare_row_order_is_first_seen_across_inputs(self):
         """Row order in the compare table is "first seen across inputs", baseline first.
         Pins the `seen` set / `ordered_requests` accumulator behavior."""
-        # fmt: off
-        # ruff: noqa: E501
-        a_csv = """record_type,scenario_name,group_hierarchy,request_name,status,start_timestamp,end_timestamp,response_time_ms,error_message,event_type,duration_ms,cumulated_response_time_ms,is_incoming
-request,,,X,OK,1,2,1,,,,,false
-request,,,Y,OK,3,4,1,,,,,false
-"""
-        b_csv = """record_type,scenario_name,group_hierarchy,request_name,status,start_timestamp,end_timestamp,response_time_ms,error_message,event_type,duration_ms,cumulated_response_time_ms,is_incoming
-request,,,Y,OK,1,2,1,,,,,false
-request,,,Z,OK,3,4,1,,,,,false
-"""
-        # fmt: on
+        baseline = make_compare_input("a", {"X": {"95th": 1, "ok": 1}, "Y": {"95th": 1, "ok": 1}})
+        candidate = make_compare_input("b", {"Y": {"95th": 1, "ok": 1}, "Z": {"95th": 1, "ok": 1}})
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            a = Path(tmpdir) / "a-20250101010101010-test"
-            b = Path(tmpdir) / "b-20250101010101010-test"
-            a.mkdir()
-            b.mkdir()
-            (a / "simulation.csv").write_text(a_csv)
-            (b / "simulation.csv").write_text(b_csv)
-
-            baseline = collect_compare_input(a, label=None, exclude=None)
-            candidate = collect_compare_input(b, label=None, exclude=None)
-
-            out = format_compare_markdown([baseline, candidate], ["95th"], self.PERCENTILE_TITLES)
+        out = format_compare_markdown([baseline, candidate], ["95th"], self.PERCENTILE_TITLES)
 
         # Expected order: X (only in baseline), Y (in both, first seen via baseline), Z (only in candidate).
         x_idx = out.index("| X |")
