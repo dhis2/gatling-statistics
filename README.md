@@ -22,8 +22,8 @@ Install directly from GitHub using `uv` without needing to clone the repository:
 # Install latest release (recommended)
 uv tool install git+https://github.com/dhis2/gatling-statistics
 
-# Install specific version
-uv tool install git+https://github.com/dhis2/gatling-statistics@v0.1.0
+# Pin a specific version (see https://github.com/dhis2/gatling-statistics/releases)
+uv tool install git+https://github.com/dhis2/gatling-statistics@<tag>
 
 # Update to latest version
 uv tool install --reinstall git+https://github.com/dhis2/gatling-statistics
@@ -232,8 +232,8 @@ samples/
 Example wrapper layout (the path you get from `gh run download`):
 
 ```
-2.43.0-load-6users-300s-24555271744/                         ← wrapper (artifact name)
-└── gatling-report-…-attempt-1/                              ← wrapper (workflow plumbing)
+2.43.0-load-6users-300s-24555271744/                         ← outer wrapper (gh artifact name)
+└── gatling-report-…-attempt-1/                              ← inner wrapper (added by the CI workflow)
     ├── trackertest-…-warmup-1/simulation.csv
     └── trackertest-…/simulation.csv
 ```
