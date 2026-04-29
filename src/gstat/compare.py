@@ -177,7 +177,7 @@ def format_compare_markdown(
             header_cells.extend([other.label, "req/s", "KO%"])
             align_cells.extend(["---:", "---:", "---:"])
             if show_diff:
-                header_cells.append("Diff")
+                header_cells.append("Diff (ms)")
                 align_cells.append("---:")
             if show_change:
                 header_cells.append("Change")

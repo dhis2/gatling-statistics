@@ -743,7 +743,7 @@ class TestCompare(unittest.TestCase):
 
         # Table column headers (req/s + KO% per run)
         self.assertIn(
-            "| Scenario | warmup | req/s | KO% | main | req/s | KO% | Diff | Change |", out
+            "| Scenario | warmup | req/s | KO% | main | req/s | KO% | Diff (ms) | Change |", out
         )
 
         # Improvement: small absolute diff, sub-3% change. Exercises down-arrow + sign.
@@ -831,7 +831,7 @@ class TestCompare(unittest.TestCase):
         )
 
         # Change column header is gone; Diff is still there. req/s + KO% stay per run.
-        self.assertIn("| Scenario | warmup | req/s | KO% | main | req/s | KO% | Diff |", out)
+        self.assertIn("| Scenario | warmup | req/s | KO% | main | req/s | KO% | Diff (ms) |", out)
         self.assertNotIn("Change", out)
         self.assertNotIn(":arrow_down:", out)
         self.assertNotIn(":arrow_up:", out)
