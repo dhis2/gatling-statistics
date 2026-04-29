@@ -8,7 +8,7 @@ import io
 import re
 import tempfile
 import unittest
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import redirect_stderr
 from datetime import datetime
 from pathlib import Path
 
@@ -742,8 +742,7 @@ flat-multi,trackertest,ANC import,1000,1000,0,2.05,33,36,38,43,87,587
     @staticmethod
     def _capture(fn, *args, **kwargs) -> str:
         buf = io.StringIO()
-        with redirect_stdout(buf):
-            fn(*args, **kwargs)
+        fn(*args, **kwargs, out=buf)
         return buf.getvalue()
 
     def test_per_run_output(self):
@@ -936,6 +935,89 @@ request,,,FastReq,OK,5000,5500,500,,,,,false
             # end_max=100001 in run A, etc.), summed = 198.002s; 200 / 198.002 ≈ 1.01.
             self.assertEqual(cells[3], "200")
             self.assertEqual(cells[6], "1.01")
+
+    def test_per_run_markdown_format(self):
+        """`--format markdown` emits the same column set as CSV with a
+        GitHub-flavored header + alignment row. Numeric columns are right-
+        aligned (`---:`), strings left-aligned (`:---`)."""
+        gatling_data = load_gatling_data(FIXTURES_PARENT, exclude="warmup")
+        out = self._capture(format_output, gatling_data, "markdown")
+
+        lines = [line for line in out.splitlines() if line]
+        self.assertEqual(
+            lines[0],
+            "| directory | simulation | run_timestamp | request_name | count | "
+            "ok_count | ko_count | req_per_sec | min | 50th | 75th | 95th | 99th | max |",
+        )
+        # Alignment row: 4 string columns left, 10 numeric columns right.
+        self.assertEqual(
+            lines[1], "|:---|:---|:---|:---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
+        )
+
+        data_rows = lines[2:]
+        self.assertEqual(len(data_rows), 23)  # 23 requests in main fixture
+        for row in data_rows:
+            self.assertTrue(row.startswith("| ") and row.endswith(" |"))
+            # 14 columns → 13 internal `|` separators + 2 outer = 15 pipes total.
+            self.assertEqual(row.count("|"), 15)
+
+        # Pin a specific row so format drift fails loudly.
+        self.assertIn(
+            "| trackertest-20260424071214792-2.43.0-smoke-1u-1000req | trackertest "
+            "| 2026-04-24 07:12:14 | MNCH import | 1000 | 1000 | 0 | 2.05 | 56 | "
+            "94 | 103 | 119 | 174 | 626 |",
+            out,
+        )
+
+    def test_combined_markdown_format(self):
+        """`--combine --format markdown` emits one row per request with the
+        combined-output column set (no `run_timestamp`)."""
+        gatling_data = load_gatling_data(FIXTURES_PARENT, exclude="warmup")
+        out = self._capture(format_output_combined, gatling_data, "markdown")
+
+        lines = [line for line in out.splitlines() if line]
+        self.assertEqual(
+            lines[0],
+            "| directory | simulation | request_name | count | ok_count | "
+            "ko_count | req_per_sec | min | 50th | 75th | 95th | 99th | max |",
+        )
+        self.assertEqual(
+            lines[1], "|:---|:---|:---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
+        )
+
+        # Pin a row that matches the COMBINED_OUTPUT_MAIN_ONLY snapshot
+        # (warmup excluded so combined collapses to the main run alone).
+        self.assertIn(
+            "| flat-multi | trackertest | MNCH import | 1000 | 1000 | 0 | 2.05 "
+            "| 56 | 94 | 103 | 119 | 174 | 626 |",
+            out,
+        )
+
+    def test_markdown_and_csv_carry_same_data(self):
+        """Markdown and CSV emit the same numeric values for every cell.
+        Catches drift between the two formatters (e.g. one path rounding
+        differently or dropping a column)."""
+        gatling_data = load_gatling_data(FIXTURES_PARENT, exclude="warmup")
+
+        csv_out = self._capture(format_output_combined, gatling_data, "csv")
+        md_out = self._capture(format_output_combined, gatling_data, "markdown")
+
+        csv_rows = [
+            line.split(",")
+            for line in csv_out.splitlines()
+            if line and not line.startswith("directory,")
+        ]
+        md_rows = [
+            [cell.strip() for cell in line.strip("|").split("|")]
+            for line in md_out.splitlines()
+            if line.startswith("|") and not line.startswith("|:") and not line.startswith("|---")
+        ]
+        # First markdown row is the header; drop it.
+        md_data = md_rows[1:]
+
+        self.assertEqual(len(csv_rows), len(md_data))
+        for csv_row, md_row in zip(csv_rows, md_data, strict=True):
+            self.assertEqual(csv_row, md_row)
 
 
 def make_compare_input(

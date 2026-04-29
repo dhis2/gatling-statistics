@@ -1,11 +1,11 @@
-"""CSV output and Markdown comparison rendering across runs."""
+"""CSV/Markdown table output and Markdown comparison rendering across runs."""
 
 import csv
 import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import NamedTuple
+from typing import NamedTuple, TextIO
 
 from .gatling import GatlingRuns, calculate_percentiles, load_gatling_data
 
@@ -256,80 +256,130 @@ def format_compare_markdown(
     return "\n".join(lines) + "\n"
 
 
-def format_output(gatling_data: GatlingRuns) -> None:
-    """Format and print results as CSV."""
-    writer = csv.writer(sys.stdout, lineterminator="\n")
-    writer.writerow(
-        [
-            "directory",
-            "simulation",
-            "run_timestamp",
-            "request_name",
-            "count",
-            "ok_count",
-            "ko_count",
-            "req_per_sec",
-            "min",
-            "50th",
-            "75th",
-            "95th",
-            "99th",
-            "max",
-        ]
-    )
+PER_RUN_HEADER = [
+    "directory",
+    "simulation",
+    "run_timestamp",
+    "request_name",
+    "count",
+    "ok_count",
+    "ko_count",
+    "req_per_sec",
+    "min",
+    "50th",
+    "75th",
+    "95th",
+    "99th",
+    "max",
+]
+
+COMBINED_HEADER = [
+    "directory",
+    "simulation",
+    "request_name",
+    "count",
+    "ok_count",
+    "ko_count",
+    "req_per_sec",
+    "min",
+    "50th",
+    "75th",
+    "95th",
+    "99th",
+    "max",
+]
+
+# Right-align numeric columns; left-align string columns. Index-aligned with
+# PER_RUN_HEADER / COMBINED_HEADER so the markdown writer can pull alignment
+# without restating the schema.
+_NUMERIC_COLUMNS = {
+    "count",
+    "ok_count",
+    "ko_count",
+    "req_per_sec",
+    "min",
+    "50th",
+    "75th",
+    "95th",
+    "99th",
+    "max",
+}
+
+
+def _markdown_align(header: list[str]) -> str:
+    """`|:---|---:|...|` alignment row: right-align numeric, left-align strings."""
+    cells = ["---:" if col in _NUMERIC_COLUMNS else ":---" for col in header]
+    return "|" + "|".join(cells) + "|"
+
+
+def format_output(
+    gatling_data: GatlingRuns,
+    output_format: str = "csv",
+    out: TextIO = sys.stdout,
+) -> None:
+    """Write per-run results to `out` (default stdout).
+
+    `output_format` is `"csv"` (default) or `"markdown"`. Both emit the same
+    column set.
+    """
+    if output_format == "markdown":
+        out.write("| " + " | ".join(PER_RUN_HEADER) + " |\n")
+        out.write(_markdown_align(PER_RUN_HEADER) + "\n")
+        writer = None
+    else:
+        writer = csv.writer(out, lineterminator="\n")
+        writer.writerow(PER_RUN_HEADER)
 
     for simulation in gatling_data.get_simulations():
         for run_timestamp in gatling_data.get_run_timestamps(simulation):
             run_data = gatling_data.get_run(simulation, run_timestamp)
-            if run_data:
-                for request_name, request_data in run_data.requests.items():
-                    p = request_data.percentiles
-                    writer.writerow(
-                        [
-                            run_data.directory.name,
-                            simulation,
-                            run_data.formatted_timestamp,
-                            request_name,
-                            request_data.count,
-                            request_data.ok_count,
-                            request_data.ko_count,
-                            f"{request_data.req_per_sec:.2f}",
-                            f"{p['min']:.0f}",
-                            f"{p['50th']:.0f}",
-                            f"{p['75th']:.0f}",
-                            f"{p['95th']:.0f}",
-                            f"{p['99th']:.0f}",
-                            f"{p['max']:.0f}",
-                        ]
-                    )
+            if run_data is None:
+                continue
+            for request_name, request_data in run_data.requests.items():
+                p = request_data.percentiles
+                row = [
+                    run_data.directory.name,
+                    simulation,
+                    run_data.formatted_timestamp,
+                    request_name,
+                    str(request_data.count),
+                    str(request_data.ok_count),
+                    str(request_data.ko_count),
+                    f"{request_data.req_per_sec:.2f}",
+                    f"{p['min']:.0f}",
+                    f"{p['50th']:.0f}",
+                    f"{p['75th']:.0f}",
+                    f"{p['95th']:.0f}",
+                    f"{p['99th']:.0f}",
+                    f"{p['max']:.0f}",
+                ]
+                if writer is None:
+                    out.write("| " + " | ".join(row) + " |\n")
+                else:
+                    writer.writerow(row)
 
 
-def format_output_combined(gatling_data: GatlingRuns) -> None:
-    """Format and print combined results as CSV (one row per request).
+def format_output_combined(
+    gatling_data: GatlingRuns,
+    output_format: str = "csv",
+    out: TextIO = sys.stdout,
+) -> None:
+    """Write combined results (one row per request) to `out` (default stdout).
 
     Combines response times across all (simulation, run, request) tuples by request
     name and computes percentiles over the combined samples. Schema differs from the
     per-run output: no `run_timestamp` column, `directory` is the input the user
     passed, `count` is the total sample count.
+
+    `output_format` is `"csv"` (default) or `"markdown"`.
     """
-    writer = csv.writer(sys.stdout, lineterminator="\n")
-    writer.writerow(
-        [
-            "directory",
-            "simulation",
-            "request_name",
-            "count",
-            "ok_count",
-            "ko_count",
-            "req_per_sec",
-            "min",
-            "50th",
-            "75th",
-            "95th",
-            "99th",
-            "max",
-        ]
-    )
+    if output_format == "markdown":
+        out.write("| " + " | ".join(COMBINED_HEADER) + " |\n")
+        out.write(_markdown_align(COMBINED_HEADER) + "\n")
+        writer = None
+    else:
+        writer = csv.writer(out, lineterminator="\n")
+        writer.writerow(COMBINED_HEADER)
 
     combined = combine_request_data(gatling_data)
     if not combined:
@@ -341,20 +391,22 @@ def format_output_combined(gatling_data: GatlingRuns) -> None:
 
     for request_name, c in combined.items():
         p = calculate_percentiles(c.response_times)
-        writer.writerow(
-            [
-                directory,
-                simulation,
-                request_name,
-                len(c.response_times),
-                c.ok_count,
-                c.ko_count,
-                f"{c.req_per_sec:.2f}",
-                f"{p['min']:.0f}",
-                f"{p['50th']:.0f}",
-                f"{p['75th']:.0f}",
-                f"{p['95th']:.0f}",
-                f"{p['99th']:.0f}",
-                f"{p['max']:.0f}",
-            ]
-        )
+        row = [
+            directory,
+            simulation,
+            request_name,
+            str(len(c.response_times)),
+            str(c.ok_count),
+            str(c.ko_count),
+            f"{c.req_per_sec:.2f}",
+            f"{p['min']:.0f}",
+            f"{p['50th']:.0f}",
+            f"{p['75th']:.0f}",
+            f"{p['95th']:.0f}",
+            f"{p['99th']:.0f}",
+            f"{p['max']:.0f}",
+        ]
+        if writer is None:
+            out.write("| " + " | ".join(row) + " |\n")
+        else:
+            writer.writerow(row)

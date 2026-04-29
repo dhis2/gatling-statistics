@@ -9,26 +9,6 @@ discussion.
 
 Captured while regenerating every p95 table in the 2.43 release notes from `gstat`.
 
-* **Add Markdown table output to the default `gstat <dir>` command (in addition to CSV).**
-Same data, different format. Useful for pasting into PR descriptions and Jira tickets
-without the user having to invoke `gstat compare` against itself or pipe through a
-CSV-to-Markdown converter. Should also work with `--combine`.
-  * **Open**: flag shape `--format {csv,markdown}` (selector, scales if more formats land
-later) or just `--markdown` (boolean, simpler for two formats)?
-  * **Answer**: `--format {csv,markdown}`. Two reasons. (1) JSON is the obvious next
-format request the moment anyone tries to pipe `gstat` into a script, and adding
-`--json` next to `--markdown` reopens this discussion. (2) Booleans pile up:
-`--markdown --json` is a malformed input that the parser has to reject explicitly,
-whereas `--format` rejects the impossible by construction. The cost is one extra word
-at invocation; cheap.
-  * **Open**: emit the same column set as CSV, or auto-trim to the columns that read well
-in Markdown (e.g. drop `directory`/`simulation` when they are constant)?
-  * **Answer**: emit the same columns. Auto-trim is a "smart default" that surprises
-users when a constant column suddenly disappears between runs. Pasting a Markdown
-table from one run with `directory` present and another without it is exactly the kind
-of small inconsistency that costs time to notice. If trimming is wanted, expose it as
-a separate `--drop-constant-columns` flag later. Never trim implicitly.
-
 * **Confidence cues for low-n cells.** When `count` is small (say <30) the percentile
 is statistically noisy. Marking those cells (asterisk, footnote, or a `--min-samples
 30` warning) helps readers calibrate trust without us flagging it manually in narrative.

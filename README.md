@@ -128,6 +128,16 @@ The combined output drops the `run_timestamp` column. `count` is the sum across 
 Percentiles are computed over the combined response times, not averaged from per-run
 percentiles.
 
+### Output format (`--format`)
+
+Default output is CSV. Pass `--format markdown` to emit a GitHub-flavored Markdown table
+with the same column set:
+
+```sh
+gstat --format markdown ./baseline
+gstat --combine --format markdown ./baseline
+```
+
 ### Filtering requests
 
 `--include-request REGEX` keeps only requests whose displayed full path matches.

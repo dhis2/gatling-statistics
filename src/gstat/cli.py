@@ -326,6 +326,10 @@ Examples:
 
   # Combine multiple runs into one row per request (combined samples)
   gstat --combine --exclude warmup ./samples/
+
+  # Markdown output
+  gstat --format markdown ./samples/
+  gstat --combine --format markdown ./samples/
         """,
     )
     parser.add_argument(
@@ -384,6 +388,14 @@ Examples:
         ),
     )
     parser.add_argument(
+        "--format",
+        choices=["csv", "markdown"],
+        default="csv",
+        help=(
+            "Output format for the percentile table. Same column set in both. Works with --combine."
+        ),
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"gstat {__version__} (git: {__git_sha__})",
@@ -421,9 +433,9 @@ Examples:
 
         show_plot_with_clipboard(fig, gatling_data.report_directory, args.output)
     elif args.combine:
-        format_output_combined(gatling_data)
+        format_output_combined(gatling_data, args.format)
     else:
-        format_output(gatling_data)
+        format_output(gatling_data, args.format)
 
 
 if __name__ == "__main__":
