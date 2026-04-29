@@ -171,7 +171,7 @@ def format_compare_markdown(
 
         # Header. For each input, render value | req/s | KO% so throughput sits
         # next to the percentile it describes (matches the release-note shape).
-        header_cells = ["Scenario", baseline.label, "req/s", "KO%"]
+        header_cells = ["Requests", baseline.label, "req/s", "KO%"]
         align_cells = [":---", "---:", "---:", "---:"]
         for other in others:
             header_cells.extend([other.label, "req/s", "KO%"])

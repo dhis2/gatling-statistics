@@ -743,7 +743,7 @@ class TestCompare(unittest.TestCase):
 
         # Table column headers (req/s + KO% per run)
         self.assertIn(
-            "| Scenario | warmup | req/s | KO% | main | req/s | KO% | Diff (ms) | Change |", out
+            "| Requests | warmup | req/s | KO% | main | req/s | KO% | Diff (ms) | Change |", out
         )
 
         # Improvement: small absolute diff, sub-3% change. Exercises down-arrow + sign.
@@ -810,7 +810,7 @@ class TestCompare(unittest.TestCase):
         )
 
         # Diff column header is gone; Change is still there. req/s + KO% stay per run.
-        self.assertIn("| Scenario | warmup | req/s | KO% | main | req/s | KO% | Change |", out)
+        self.assertIn("| Requests | warmup | req/s | KO% | main | req/s | KO% | Change |", out)
         self.assertNotIn("Diff", out)
 
         # Row loses the -41 Diff cell but keeps the req/s and KO% cells.
@@ -831,7 +831,7 @@ class TestCompare(unittest.TestCase):
         )
 
         # Change column header is gone; Diff is still there. req/s + KO% stay per run.
-        self.assertIn("| Scenario | warmup | req/s | KO% | main | req/s | KO% | Diff (ms) |", out)
+        self.assertIn("| Requests | warmup | req/s | KO% | main | req/s | KO% | Diff (ms) |", out)
         self.assertNotIn("Change", out)
         self.assertNotIn(":arrow_down:", out)
         self.assertNotIn(":arrow_up:", out)
@@ -852,7 +852,7 @@ class TestCompare(unittest.TestCase):
             show_change=False,
         )
 
-        self.assertIn("| Scenario | warmup | req/s | KO% | main | req/s | KO% |", out)
+        self.assertIn("| Requests | warmup | req/s | KO% | main | req/s | KO% |", out)
         self.assertNotIn("Diff", out)
         self.assertNotIn("Change", out)
         self.assertIn("| Login | 152 | 0.50 | 0.0% | 111 | 0.60 | 0.0% |", out)
