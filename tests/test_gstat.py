@@ -696,12 +696,14 @@ def make_compare_input(
     }
     ok_ko_counts = {req: (stats.get("ok", 0), stats.get("ko", 0)) for req, stats in rows.items()}
     req_per_sec = {req: stats.get("rps", 0.0) for req, stats in rows.items()}
+    has_ko = any(stats.get("ko", 0) > 0 for stats in rows.values())
     return CompareInput(
         path=Path(path_name or label),
         label=label,
         percentiles=percentiles,
         ok_ko_counts=ok_ko_counts,
         req_per_sec=req_per_sec,
+        has_ko=has_ko,
     )
 
 
@@ -741,23 +743,22 @@ class TestCompare(unittest.TestCase):
         self.assertIn("### 95th Percentile Response Time (p95) (ms)", out)
         self.assertNotIn("### Median Response Time", out)
 
-        # Table column headers (req/s + KO% per run)
-        self.assertIn(
-            "| Requests | warmup | req/s | KO% | main | req/s | KO% | Diff (ms) | Change |", out
-        )
+        # Table column headers (req/s per run; KO% hidden because no failures).
+        self.assertIn("| Requests | warmup | req/s | main | req/s | Diff (ms) | Change |", out)
+        self.assertNotIn("KO%", out)
 
         # Improvement: small absolute diff, sub-3% change. Exercises down-arrow + sign.
         # 1000 imports / warmup window (~377.89s) ≈ 2.65 req/s; / main window
         # (~487.59s) ≈ 2.05 req/s. Pins both throughputs alongside the percentile.
         self.assertIn(
-            "| ANC import | 44 | 2.65 | 0.0% | 43 | 2.05 | 0.0% | -1 | :arrow_down: -2.3% |",
+            "| ANC import | 44 | 2.65 | 43 | 2.05 | -1 | :arrow_down: -2.3% |",
             out,
         )
 
         # Improvement: large negative diff, double-digit percent. Exercises down-arrow + double-digit.
         # Login fires 5 times per run; req/s ≈ 0.01 in both windows.
         self.assertIn(
-            "| Login | 152 | 0.01 | 0.0% | 111 | 0.01 | 0.0% | -41 | :arrow_down: -26.9% |",
+            "| Login | 152 | 0.01 | 111 | 0.01 | -41 | :arrow_down: -26.9% |",
             out,
         )
 
@@ -765,7 +766,7 @@ class TestCompare(unittest.TestCase):
         # Exercises up-arrow + {:,.0f} comma + multi-percent. 100 hits per run:
         # 100/377.89 ≈ 0.26, 100/487.59 ≈ 0.21.
         self.assertIn(
-            "| Get Child Programme TEs / Search Birth events | 665 | 0.26 | 0.0% | 1,302 | 0.21 | 0.0% | +637 | :arrow_up: +95.8% |",
+            "| Get Child Programme TEs / Search Birth events | 665 | 0.26 | 1,302 | 0.21 | +637 | :arrow_up: +95.8% |",
             out,
         )
 
@@ -792,13 +793,11 @@ class TestCompare(unittest.TestCase):
 
         out = format_compare_markdown([baseline, candidate], ["95th"], self.PERCENTILE_TITLES)
 
-        # Login is in both: real numbers + diff/change. KO% = 0 in both inputs.
-        self.assertIn(
-            "| Login | 108 | 1.50 | 0.0% | 120 | 1.40 | 0.0% | +12 | :arrow_up: +11.1% |", out
-        )
-        # Search is only in candidate: baseline value/req/s/KO% all `-`,
-        # candidate value/req/s/KO% real, but diff/change `-` because baseline is None.
-        self.assertIn("| Search | - | - | - | 50 | 0.80 | 0.0% | - | - |", out)
+        # Login is in both: real numbers + diff/change. KO% column hidden (no failures).
+        self.assertIn("| Login | 108 | 1.50 | 120 | 1.40 | +12 | :arrow_up: +11.1% |", out)
+        # Search is only in candidate: baseline value/req/s `-`,
+        # candidate value/req/s real, but diff/change `-` because baseline is None.
+        self.assertIn("| Search | - | - | 50 | 0.80 | - | - |", out)
 
     def test_compare_no_diff_drops_diff_column_only(self):
         """`--no-diff` removes the Diff column but keeps the candidate value and Change."""
@@ -809,14 +808,13 @@ class TestCompare(unittest.TestCase):
             [baseline, candidate], ["95th"], self.PERCENTILE_TITLES, show_diff=False
         )
 
-        # Diff column header is gone; Change is still there. req/s + KO% stay per run.
-        self.assertIn("| Requests | warmup | req/s | KO% | main | req/s | KO% | Change |", out)
+        # Diff column header is gone; Change is still there. req/s stays per run.
+        # KO% hidden because no failures in either input.
+        self.assertIn("| Requests | warmup | req/s | main | req/s | Change |", out)
         self.assertNotIn("Diff", out)
 
-        # Row loses the -41 Diff cell but keeps the req/s and KO% cells.
-        self.assertIn(
-            "| Login | 152 | 0.50 | 0.0% | 111 | 0.60 | 0.0% | :arrow_down: -27.0% |", out
-        )
+        # Row loses the -41 Diff cell but keeps the req/s cells.
+        self.assertIn("| Login | 152 | 0.50 | 111 | 0.60 | :arrow_down: -27.0% |", out)
 
         # Arrow legend stays because Change column is present.
         self.assertIn("_:arrow_down: = faster, :arrow_up: = slower_", out)
@@ -830,17 +828,19 @@ class TestCompare(unittest.TestCase):
             [baseline, candidate], ["95th"], self.PERCENTILE_TITLES, show_change=False
         )
 
-        # Change column header is gone; Diff is still there. req/s + KO% stay per run.
-        self.assertIn("| Requests | warmup | req/s | KO% | main | req/s | KO% | Diff (ms) |", out)
+        # Change column header is gone; Diff is still there. req/s stays per run.
+        # KO% hidden because no failures in either input.
+        self.assertIn("| Requests | warmup | req/s | main | req/s | Diff (ms) |", out)
         self.assertNotIn("Change", out)
         self.assertNotIn(":arrow_down:", out)
         self.assertNotIn(":arrow_up:", out)
 
         # Row keeps the Diff cell, drops the Change cell.
-        self.assertIn("| Login | 152 | 0.50 | 0.0% | 111 | 0.60 | 0.0% | -41 |", out)
+        self.assertIn("| Login | 152 | 0.50 | 111 | 0.60 | -41 |", out)
 
     def test_compare_no_diff_no_change_leaves_only_value_columns(self):
-        """Both toggles together collapse each candidate to value + req/s + KO% columns."""
+        """Both toggles together collapse each candidate to value + req/s columns
+        (KO% hidden when there are no failures)."""
         baseline = make_compare_input("warmup", {"Login": {"95th": 152, "ok": 1, "rps": 0.5}})
         candidate = make_compare_input("main", {"Login": {"95th": 111, "ok": 1, "rps": 0.6}})
 
@@ -852,10 +852,10 @@ class TestCompare(unittest.TestCase):
             show_change=False,
         )
 
-        self.assertIn("| Requests | warmup | req/s | KO% | main | req/s | KO% |", out)
+        self.assertIn("| Requests | warmup | req/s | main | req/s |", out)
         self.assertNotIn("Diff", out)
         self.assertNotIn("Change", out)
-        self.assertIn("| Login | 152 | 0.50 | 0.0% | 111 | 0.60 | 0.0% |", out)
+        self.assertIn("| Login | 152 | 0.50 | 111 | 0.60 |", out)
 
     def test_compare_ko_rows_contribute_to_percentile_and_ko_pct(self):
         """KO rows are included in the percentile and reported in the KO% column.
@@ -874,6 +874,10 @@ class TestCompare(unittest.TestCase):
 
         out = format_compare_markdown([baseline, candidate], ["95th"], self.PERCENTILE_TITLES)
 
+        # KO% column is shown because the candidate has ko > 0.
+        self.assertIn(
+            "| Requests | clean | req/s | KO% | failing | req/s | KO% | Diff (ms) | Change |", out
+        )
         self.assertIn(
             "| Search | 100 | 0.10 | 0.0% | 48,020 | 0.05 | 20.0% | +47,920 | :arrow_up: +47920.0% |",
             out,

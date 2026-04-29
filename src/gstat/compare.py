@@ -17,6 +17,7 @@ class CompareInput(NamedTuple):
     percentiles: dict[str, dict[str, float]]  # {request_name: {percentile_key: value}}
     ok_ko_counts: dict[str, tuple[int, int]]  # {request_name: (ok_count, ko_count)}
     req_per_sec: dict[str, float]  # {request_name: throughput}
+    has_ko: bool  # any request had ko_count > 0
 
 
 @dataclass(slots=True)
@@ -86,9 +87,16 @@ def collect_compare_input(path: Path, label: str | None, exclude: str | None) ->
     """
     gatling_data = load_gatling_data(path, exclude)
     combined = combine_request_data(gatling_data)
-    percentiles = {req: calculate_percentiles(c.response_times) for req, c in combined.items()}
-    ok_ko_counts = {req: (c.ok_count, c.ko_count) for req, c in combined.items()}
-    req_per_sec = {req: c.req_per_sec for req, c in combined.items()}
+    percentiles: dict[str, dict[str, float]] = {}
+    ok_ko_counts: dict[str, tuple[int, int]] = {}
+    req_per_sec: dict[str, float] = {}
+    has_ko = False
+    for req, c in combined.items():
+        percentiles[req] = calculate_percentiles(c.response_times)
+        ok_ko_counts[req] = (c.ok_count, c.ko_count)
+        req_per_sec[req] = c.req_per_sec
+        if c.ko_count > 0:
+            has_ko = True
 
     return CompareInput(
         path=path,
@@ -96,6 +104,7 @@ def collect_compare_input(path: Path, label: str | None, exclude: str | None) ->
         percentiles=percentiles,
         ok_ko_counts=ok_ko_counts,
         req_per_sec=req_per_sec,
+        has_ko=has_ko,
     )
 
 
@@ -166,16 +175,27 @@ def format_compare_markdown(
             return "-"
         return f"{rps:.2f}"
 
+    # Hide KO% entirely when every input has zero KO for every request — an
+    # all-zero column adds noise. Any non-zero KO surfaces the column for all
+    # rows so a single failing request is still visible in context.
+    show_ko = any(inp.has_ko for inp in inputs)
+
     for pkey in percentile_keys:
         title = percentile_titles[pkey]
 
         # Header. For each input, render value | req/s | KO% so throughput sits
         # next to the percentile it describes (matches the release-note shape).
-        header_cells = ["Requests", baseline.label, "req/s", "KO%"]
-        align_cells = [":---", "---:", "---:", "---:"]
+        header_cells = ["Requests", baseline.label, "req/s"]
+        align_cells = [":---", "---:", "---:"]
+        if show_ko:
+            header_cells.append("KO%")
+            align_cells.append("---:")
         for other in others:
-            header_cells.extend([other.label, "req/s", "KO%"])
-            align_cells.extend(["---:", "---:", "---:"])
+            header_cells.extend([other.label, "req/s"])
+            align_cells.extend(["---:", "---:"])
+            if show_ko:
+                header_cells.append("KO%")
+                align_cells.append("---:")
             if show_diff:
                 header_cells.append("Diff (ms)")
                 align_cells.append("---:")
@@ -194,12 +214,14 @@ def format_compare_markdown(
             row = [req]
             row.append("-" if bval is None else f"{bval:,.0f}")
             row.append(rps_cell(baseline, req))
-            row.append(ko_pct_cell(baseline, req))
+            if show_ko:
+                row.append(ko_pct_cell(baseline, req))
             for other in others:
                 oval = other.percentiles.get(req, {}).get(pkey)
                 row.append("-" if oval is None else f"{oval:,.0f}")
                 row.append(rps_cell(other, req))
-                row.append(ko_pct_cell(other, req))
+                if show_ko:
+                    row.append(ko_pct_cell(other, req))
                 if oval is None or bval is None:
                     if show_diff:
                         row.append("-")
