@@ -128,6 +128,26 @@ The combined output drops the `run_timestamp` column. `count` is the sum across 
 Percentiles are computed over the combined response times, not averaged from per-run
 percentiles.
 
+### Filtering requests
+
+`--include-request REGEX` keeps only requests whose displayed full path matches.
+`--exclude-request REGEX` drops requests whose displayed full path matches. Both are
+repeatable (multiple flags OR together); when a request matches both, exclude wins.
+Both flags work for `gstat <dir>` and `gstat compare`.
+
+```sh
+# Anchored exclude: drop a single request by its full path
+gstat --exclude-request '^Login$' ./baseline
+
+# Narrow to one group; group prefix anchors the regex
+gstat compare ./baseline ./candidate --include-request '^Get ANC'
+```
+
+The displayed full path uses ` / ` between group levels (e.g.
+`Get ANC events / Search by date range`), so the regex can anchor on a group.
+Regex syntax follows Python's `re` module
+([reference](https://docs.python.org/3/library/re.html)).
+
 ### Comparing runs (`compare`)
 
 Generate a Markdown comparison table across two or more runs (first input is the baseline,

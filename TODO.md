@@ -9,22 +9,6 @@ discussion.
 
 Captured while regenerating every p95 table in the 2.43 release notes from `gstat`.
 
-* **Add request filtering to `gstat compare`.** Two recurring needs collapse into one
-flag pair: drop noise rows the user does not care about (e.g. `Login`, which most
-release-note authors strip by hand), and narrow to a subset for focused tables (e.g.
-"only import scenarios" or "only ANC paths"). A `--include <regex>` and
-`--exclude-request <regex>` pair covers both. Subsumes the "skip Login" use case without
-baking Gatling-specific defaults into the tool.
-  * **Open**: match against bare `request_name`, or against the displayed full path
-(e.g. `Get ANC events / Search by date range`)? Full path lets users narrow by group.
-  * **Answer**: match against the displayed full path. The bare name has too many
-collisions across groups (e.g. `Get first event` appears under both ANC and Child
-scenarios with different semantics) to be useful as a filter target on its own. The
-full path also lets users narrow by group with one anchor (`^Get ANC events`), which
-is exactly the "only ANC paths" case from the release-note workflow. The bare-name
-case (`--exclude-request '^Login$'`) is still trivial because the full path equals
-the bare name when there is no group prefix.
-
 * **Add Markdown table output to the default `gstat <dir>` command (in addition to CSV).**
 Same data, different format. Useful for pasting into PR descriptions and Jira tickets
 without the user having to invoke `gstat compare` against itself or pipe through a

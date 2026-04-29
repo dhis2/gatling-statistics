@@ -12,6 +12,28 @@ import numpy as np
 import pandas as pd
 
 
+def request_matches(
+    full_path: str,
+    includes: list[re.Pattern[str]] | None,
+    excludes: list[re.Pattern[str]] | None,
+) -> bool:
+    """Return True if `full_path` should be kept after filtering.
+
+    Semantics:
+    * `excludes` win: a path matching any exclude is dropped, even if it also
+      matches an include. Reads as "give me X but not Y".
+    * `includes` are OR'd: a path is kept if it matches at least one include
+      (or if no includes were given at all).
+    * `re.search` (not `re.match`) so users can anchor with `^`/`$` themselves;
+      bare `Login` matches anywhere in the path.
+    """
+    if excludes and any(p.search(full_path) for p in excludes):
+        return False
+    if includes and not any(p.search(full_path) for p in includes):
+        return False
+    return True
+
+
 def parse_simulation_csv(csv_path: Path) -> pd.DataFrame:
     """Parse simulation.csv and return all request records (OK and KO).
 
@@ -278,7 +300,12 @@ def find_report_root(directory: Path, max_depth: int = MAX_WRAPPER_DEPTH) -> Pat
     )
 
 
-def load_gatling_data(directory: Path, exclude: str = None) -> GatlingRuns:
+def load_gatling_data(
+    directory: Path,
+    exclude: str = None,
+    include_request: list[re.Pattern[str]] | None = None,
+    exclude_request: list[re.Pattern[str]] | None = None,
+) -> GatlingRuns:
     """Load all Gatling data from directory, handling both single and multi-directory cases.
 
     Accepts:
@@ -287,6 +314,11 @@ def load_gatling_data(directory: Path, exclude: str = None) -> GatlingRuns:
         subdirectories, or
       * an outer wrapper directory (e.g. `gh run download` output) that nests
         one of the above up to a few levels deep.
+
+    `exclude` filters report subdirectories by basename substring (e.g. "warmup").
+    `include_request` / `exclude_request` filter individual request rows by their
+    displayed full path (e.g. "Get ANC events / Search by date range"). See
+    `request_matches` for filter semantics.
 
     Builds an immutable GatlingRuns with simulations and runs sorted; consumers
     can rely on the data being complete and ordered.
@@ -300,7 +332,7 @@ def load_gatling_data(directory: Path, exclude: str = None) -> GatlingRuns:
     raw: dict[str, dict[str, GatlingRun]] = {}
 
     def ingest(subdir: Path) -> None:
-        loaded = _load_single_directory(subdir)
+        loaded = _load_single_directory(subdir, include_request, exclude_request)
         if loaded is None:
             return
         simulation, run_timestamp, run_data = loaded
@@ -381,11 +413,19 @@ def order_requests_gatling_html(df: pd.DataFrame) -> list[tuple[str, str]]:
     return ordered
 
 
-def _load_single_directory(directory: Path) -> tuple[str, str, GatlingRun] | None:
+def _load_single_directory(
+    directory: Path,
+    include_request: list[re.Pattern[str]] | None = None,
+    exclude_request: list[re.Pattern[str]] | None = None,
+) -> tuple[str, str, GatlingRun] | None:
     """Load Gatling data from a directory directly containing one simulation.csv.
 
     Returns (simulation, run_timestamp, GatlingRun) ready to be inserted into
     GatlingRuns, or None if the directory has no simulation.csv to read.
+
+    `include_request` / `exclude_request` filter requests by their displayed
+    full path before the per-request stats are computed (skips percentile work
+    for filtered-out requests). See `request_matches` for filter semantics.
     """
     parsed = parse_gating_directory_name(directory.name)
     if parsed:
@@ -410,7 +450,6 @@ def _load_single_directory(directory: Path) -> tuple[str, str, GatlingRun] | Non
 
     requests: OrderedDict[str, GatlingRequest] = OrderedDict()
     for group_hierarchy, request_name in ordered_keys:
-        group = groups[(group_hierarchy, request_name)]
         # Compose the display path using Gatling's HTML separator (" / "), with
         # the inner "|" from glog's CSV (nested groups) swapped to " / " as well.
         full_path = (
@@ -418,6 +457,9 @@ def _load_single_directory(directory: Path) -> tuple[str, str, GatlingRun] | Non
             if group_hierarchy
             else request_name
         )
+        if not request_matches(full_path, include_request, exclude_request):
+            continue
+        group = groups[(group_hierarchy, request_name)]
         response_times = group["response_time_ms"].tolist()
         timestamps = list(zip(group["start_timestamp"], group["end_timestamp"], strict=False))
         percentiles = calculate_percentiles(response_times)

@@ -5,6 +5,7 @@ To run: uv run python tests/test_gstat.py
 """
 
 import io
+import re
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -24,6 +25,7 @@ from gstat import (
     parse_gatling_directory_timestamp,
     plot_percentiles_stacked,
 )
+from gstat.gatling import request_matches
 
 FIXTURES_ROOT = Path(__file__).parent / "fixtures"
 FLAT_MULTI = FIXTURES_ROOT / "flat-multi"
@@ -218,6 +220,261 @@ user,Single Events,,,,1762133613933,,,,end,,,
                 self.assertAlmostEqual(
                     data.mean, expected_mean, places=2, msg=f"Wrong mean for {full_path}"
                 )
+
+
+class TestRequestMatches(unittest.TestCase):
+    """Pin the filter semantics that drive --include-request / --exclude-request.
+
+    Pure logic over a string + two regex lists; no I/O. The integration tests in
+    TestRequestFilterLoading exercise the same semantics through load_gatling_data.
+    """
+
+    def test_no_filters_keeps_everything(self):
+        self.assertTrue(request_matches("Login", [], []))
+        self.assertTrue(request_matches("Get ANC events / Search by date range", [], []))
+
+    def test_include_only_keeps_matching(self):
+        includes = [re.compile("^Get ANC")]
+        self.assertTrue(request_matches("Get ANC events / Search by date range", includes, []))
+        self.assertFalse(request_matches("Login", includes, []))
+
+    def test_include_or_semantics_across_multiple_patterns(self):
+        """Multiple --include-request flags OR together: a path matching ANY include is kept."""
+        includes = [re.compile("^Get ANC"), re.compile("^MNCH")]
+        self.assertTrue(request_matches("Get ANC events / Go to first page", includes, []))
+        self.assertTrue(request_matches("MNCH import", includes, []))
+        self.assertFalse(request_matches("Login", includes, []))
+
+    def test_exclude_only_drops_matching(self):
+        excludes = [re.compile("^Login$")]
+        self.assertFalse(request_matches("Login", [], excludes))
+        self.assertTrue(request_matches("Get ANC events / Search by date range", [], excludes))
+
+    def test_exclude_or_semantics_across_multiple_patterns(self):
+        excludes = [re.compile("^Login$"), re.compile("^Health")]
+        self.assertFalse(request_matches("Login", [], excludes))
+        self.assertFalse(request_matches("Healthcheck", [], excludes))
+        self.assertTrue(request_matches("Get ANC events / Go to first page", [], excludes))
+
+    def test_exclude_wins_when_both_match(self):
+        """A request matching both --include-request and --exclude-request is dropped.
+
+        Pins the "exclude wins" decision: reads as `give me X but not Y`.
+        Without this, repetitive sub-filters inside a large include set
+        (`--include 'ANC' --exclude 'date range'`) wouldn't compose.
+        """
+        includes = [re.compile("^Get ANC")]
+        excludes = [re.compile("Search by date range")]
+        self.assertFalse(
+            request_matches("Get ANC events / Search by date range", includes, excludes)
+        )
+        # Same include set, different request: kept (not matched by exclude).
+        self.assertTrue(request_matches("Get ANC events / Go to first page", includes, excludes))
+
+    def test_search_not_match_so_substrings_work_unanchored(self):
+        """Bare 'Login' matches 'Login' anywhere in the path; users anchor with ^/$ themselves."""
+        # Substring match anywhere in the path.
+        self.assertFalse(request_matches("Pre-Login Step", [], [re.compile("Login")]))
+        # Anchoring restricts to the bare name.
+        self.assertTrue(request_matches("Pre-Login Step", [], [re.compile("^Login$")]))
+        self.assertFalse(request_matches("Login", [], [re.compile("^Login$")]))
+
+    def test_filter_targets_displayed_full_path_with_slashes(self):
+        """Filter operates on the displayed " / "-joined path, not the bare request_name.
+
+        Lets a user write `^Get ANC` to narrow to one group even though many
+        sub-requests share names like "Go to first page" across groups.
+        """
+        anc = re.compile("^Get ANC")
+        # Group prefix anchors the include.
+        self.assertTrue(request_matches("Get ANC events / Go to first page", [anc], []))
+        # Same bare name under a different group is NOT picked up.
+        self.assertFalse(
+            request_matches("Get Child Programme TEs / Go to first page of TEs", [anc], [])
+        )
+
+    def test_filter_separator_is_displayed_slashes_not_csv_pipes(self):
+        """Filters target the displayed " / " path; the inner CSV "|" is irrelevant.
+
+        The loader swaps glog's nested "|" to " / " before filtering, so users
+        never need to know about the CSV's internal separator.
+        """
+        # Multi-level group, displayed with " / ".
+        path = "Get a list of TEs / Go to single enrollment / Get one event / Get first event from enrollment"
+        self.assertTrue(request_matches(path, [re.compile(r" / Get one event / ")], []))
+        # The raw "|" form does NOT match (it's not how the path is rendered).
+        self.assertFalse(request_matches(path, [re.compile(r"\|Get one event\|")], []))
+
+
+class TestRequestFilterLoading(unittest.TestCase):
+    """End-to-end test that filters applied via load_gatling_data drop the right
+    requests from the loaded data, with grouped paths and " / " separators."""
+
+    # fmt: off
+    # ruff: noqa: E501
+    CSV_CONTENT = """record_type,scenario_name,group_hierarchy,request_name,status,start_timestamp,end_timestamp,response_time_ms,error_message,event_type,duration_ms,cumulated_response_time_ms,is_incoming
+user,S,,,,1762133595734,,,,start,,,
+request,,,Login,OK,1762133595750,1762133595858,108,,,,,false
+request,,Get ANC events,Go to first page,OK,1762133595875,1762133595934,59,,,,,false
+request,,Get ANC events,Search by date range,OK,1762133596092,1762133596115,23,,,,,false
+request,,Get Child Programme TEs,Go to first page of TEs,OK,1762133614743,1762133614877,134,,,,,false
+request,,"Get Child Programme TEs|Go to single enrollment",Get first enrollment,OK,1762133614909,1762133614916,7,,,,,false
+user,S,,,,1762133615200,,,,end,,,
+"""
+    # fmt: on
+
+    ALL_REQUESTS = {
+        "Login",
+        "Get ANC events / Go to first page",
+        "Get ANC events / Search by date range",
+        "Get Child Programme TEs / Go to first page of TEs",
+        "Get Child Programme TEs / Go to single enrollment / Get first enrollment",
+    }
+
+    def _load(self, includes=None, excludes=None):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_dir = Path(tmpdir) / "trackertest-20250101010101010-test"
+            test_dir.mkdir()
+            (test_dir / "simulation.csv").write_text(self.CSV_CONTENT)
+            data = load_gatling_data(
+                Path(tmpdir),
+                include_request=includes,
+                exclude_request=excludes,
+            )
+            sim = data.get_simulations()[0]
+            run = data.get_run_timestamps(sim)[0]
+            return set(data.get_requests(sim, run))
+
+    def test_no_filters_loads_everything(self):
+        self.assertEqual(self._load(), self.ALL_REQUESTS)
+
+    def test_include_request_narrows_by_group_prefix(self):
+        """`--include-request '^Get ANC'` keeps only ANC paths.
+
+        Pins that the filter sees the displayed " / " path: matching against
+        the bare request_name ('Search by date range', 'Go to first page')
+        could not have anchored on the group prefix.
+        """
+        kept = self._load(includes=[re.compile("^Get ANC")])
+        self.assertEqual(
+            kept,
+            {
+                "Get ANC events / Go to first page",
+                "Get ANC events / Search by date range",
+            },
+        )
+
+    def test_exclude_request_drops_login(self):
+        """`--exclude-request '^Login$'` removes the noise row release-note authors strip by hand."""
+        kept = self._load(excludes=[re.compile("^Login$")])
+        self.assertEqual(kept, self.ALL_REQUESTS - {"Login"})
+
+    def test_exclude_wins_when_both_filters_match(self):
+        """Include 'Get ANC' + exclude 'Search by date range' keeps the 'Go to first page'
+        ANC row but drops the date-range one. End-to-end version of the unit test in
+        TestRequestMatches."""
+        kept = self._load(
+            includes=[re.compile("^Get ANC")],
+            excludes=[re.compile("Search by date range")],
+        )
+        self.assertEqual(kept, {"Get ANC events / Go to first page"})
+
+    def test_multiple_excludes_or_together(self):
+        kept = self._load(
+            excludes=[re.compile("^Login$"), re.compile("^Get Child")],
+        )
+        self.assertEqual(
+            kept,
+            {
+                "Get ANC events / Go to first page",
+                "Get ANC events / Search by date range",
+            },
+        )
+
+    def test_include_filter_keeps_matching_row_byte_for_byte(self):
+        """Symmetric to the exclude case: a row that an `--include-request` filter
+        narrows to renders byte-for-byte identical to its unfiltered counterpart.
+
+        The exclude variant of this test catches "filter mutates kept rows" bugs
+        from the drop side; this one catches them from the keep side. Together
+        they pin that the filter is purely a row-set predicate.
+        """
+        unfiltered = load_gatling_data(WARMUP_FIXTURE_DIR)
+        # Anchor the include on a single recognisable request.
+        filtered = load_gatling_data(
+            WARMUP_FIXTURE_DIR, include_request=[re.compile("^ANC import$")]
+        )
+
+        sim = filtered.get_simulations()[0]
+        run = filtered.get_run_timestamps(sim)[0]
+
+        self.assertEqual(filtered.get_requests(sim, run), ["ANC import"])
+
+        u = unfiltered.get_request(sim, run, "ANC import")
+        f = filtered.get_request(sim, run, "ANC import")
+        self.assertEqual(f.count, u.count)
+        self.assertEqual(f.ok_count, u.ok_count)
+        self.assertEqual(f.ko_count, u.ko_count)
+        self.assertEqual(f.percentiles, u.percentiles)
+        self.assertEqual(f.req_per_sec, u.req_per_sec)
+        self.assertEqual(f.response_times, u.response_times)
+
+    def test_filter_on_real_fixture_does_not_alter_kept_rows(self):
+        """End-to-end on a real fixture: filtering is row-level, not row-mutating.
+
+        The percentile values and counts of a surviving request must be byte-for-byte
+        identical to what the unfiltered load produces. This is the critical
+        correctness invariant: `--exclude-request` removes rows, never reshapes
+        the stats of the rows it keeps. Without this pin a future "optimisation"
+        that reused per-run aggregates (e.g. duration_seconds, denominators) could
+        silently drift the surviving rows when filters are applied.
+        """
+        unfiltered = load_gatling_data(WARMUP_FIXTURE_DIR)
+        filtered = load_gatling_data(WARMUP_FIXTURE_DIR, exclude_request=[re.compile("^Login$")])
+
+        sim = unfiltered.get_simulations()[0]
+        run = unfiltered.get_run_timestamps(sim)[0]
+
+        # Login is in the unfiltered set and gone from the filtered one.
+        self.assertIn("Login", unfiltered.get_requests(sim, run))
+        self.assertNotIn("Login", filtered.get_requests(sim, run))
+
+        # Every other request shows identical stats in both loads.
+        for req in filtered.get_requests(sim, run):
+            u = unfiltered.get_request(sim, run, req)
+            f = filtered.get_request(sim, run, req)
+            self.assertEqual(f.count, u.count, msg=req)
+            self.assertEqual(f.ok_count, u.ok_count, msg=req)
+            self.assertEqual(f.ko_count, u.ko_count, msg=req)
+            self.assertEqual(f.percentiles, u.percentiles, msg=req)
+            self.assertEqual(f.req_per_sec, u.req_per_sec, msg=req)
+
+    def test_filter_preserves_gatling_html_row_order(self):
+        """Filtering drops rows, never reorders survivors. Pins that
+        order_requests_gatling_html ordering survives the filter."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_dir = Path(tmpdir) / "trackertest-20250101010101010-test"
+            test_dir.mkdir()
+            (test_dir / "simulation.csv").write_text(self.CSV_CONTENT)
+            data = load_gatling_data(
+                Path(tmpdir),
+                exclude_request=[re.compile("^Login$")],
+            )
+            sim = data.get_simulations()[0]
+            run = data.get_run_timestamps(sim)[0]
+            # Expected order is the unfiltered Gatling HTML order minus Login.
+            # Gatling renders subgroups before parent leaves, so the
+            # "Go to single enrollment" sub-leaf comes before "Go to first
+            # page of TEs" inside Child Programme TEs.
+            self.assertEqual(
+                data.get_requests(sim, run),
+                [
+                    "Get ANC events / Go to first page",
+                    "Get ANC events / Search by date range",
+                    "Get Child Programme TEs / Go to single enrollment / Get first enrollment",
+                    "Get Child Programme TEs / Go to first page of TEs",
+                ],
+            )
 
 
 class TestLoader(unittest.TestCase):

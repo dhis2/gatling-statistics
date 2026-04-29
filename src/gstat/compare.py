@@ -1,6 +1,7 @@
 """CSV output and Markdown comparison rendering across runs."""
 
 import csv
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -78,14 +79,23 @@ def combine_request_data(gatling_data: GatlingRuns) -> dict[str, GatlingCombined
     return combined
 
 
-def collect_compare_input(path: Path, label: str | None, exclude: str | None) -> CompareInput:
+def collect_compare_input(
+    path: Path,
+    label: str | None,
+    exclude: str | None,
+    include_request: list[re.Pattern[str]] | None = None,
+    exclude_request: list[re.Pattern[str]] | None = None,
+) -> CompareInput:
     """Load one run and collapse it to {request_name: percentiles}.
 
     A run is a single Gatling report dir or a dir of them. If multiple report dirs
     remain after `exclude`, requests with the same name are merged by recomputing
     percentiles over the combined response times.
+
+    `include_request` / `exclude_request` filter individual request rows by their
+    displayed full path (forwarded to `load_gatling_data`).
     """
-    gatling_data = load_gatling_data(path, exclude)
+    gatling_data = load_gatling_data(path, exclude, include_request, exclude_request)
     combined = combine_request_data(gatling_data)
     percentiles: dict[str, dict[str, float]] = {}
     ok_ko_counts: dict[str, tuple[int, int]] = {}

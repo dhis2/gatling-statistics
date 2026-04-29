@@ -1,6 +1,7 @@
 """argparse-based command-line entry points for gstat."""
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -22,6 +23,22 @@ from .plots import (
     plot_scatter_all,
     plot_timeline,
 )
+
+
+def _compile_filter_patterns(flag_name: str, raw_patterns: list[str]) -> list[re.Pattern[str]]:
+    """Compile a list of regex strings, exiting with a clear error on the first bad one.
+
+    The flag name is included in the error so the user knows which flag to fix
+    when both --include-request and --exclude-request were given.
+    """
+    compiled: list[re.Pattern[str]] = []
+    for pattern in raw_patterns:
+        try:
+            compiled.append(re.compile(pattern))
+        except re.error as e:
+            print(f"Error: {flag_name} {pattern!r} is not a valid regex: {e}", file=sys.stderr)
+            sys.exit(2)
+    return compiled
 
 
 def show_plot_with_clipboard(
@@ -110,6 +127,15 @@ up to 3 levels deep.
 Options:
   --percentile {50,75,95,99}  Percentile(s) to render. Repeat for multiple. Default: 50 and 95.
   --exclude STRING            Exclude report directories containing this string (e.g. 'warmup').
+  --include-request REGEX     Keep only requests whose displayed full path matches.
+                              Repeatable; multiple flags OR together.
+                              Python `re` syntax (https://docs.python.org/3/library/re.html).
+                              Example: --include-request '^Get ANC'
+  --exclude-request REGEX     Drop requests whose displayed full path matches.
+                              Repeatable; multiple flags OR together.
+                              Wins over --include-request when a request matches both.
+                              Python `re` syntax (https://docs.python.org/3/library/re.html).
+                              Example: --exclude-request '^Login$'
   --no-diff                   Omit the Diff (ms) column from each candidate run.
   --no-change                 Omit the Change (%) column (and arrow legend) from each candidate.
   -h, --help                  Show this help.
@@ -120,6 +146,8 @@ Examples:
   gstat compare ./run-2.41.8 --label 2.41.8 \\
                 ./run-2.42.4 --label 2.42.4 \\
                 ./run-2.43.0 --label 2.43.0
+  gstat compare ./baseline ./candidate \\
+                --exclude-request '^Login$' --include-request '^Get ANC'
 """
 
 
@@ -135,6 +163,8 @@ def _main_compare(argv: list[str]) -> None:
 
     inputs: list[tuple[Path, str | None]] = []
     exclude: str | None = None
+    include_request_raw: list[str] = []
+    exclude_request_raw: list[str] = []
     percentile_keys: list[str] = []
     show_diff = True
     show_change = True
@@ -158,6 +188,18 @@ def _main_compare(argv: list[str]) -> None:
                 sys.exit(2)
             exclude = argv[i + 1]
             i += 2
+        elif token == "--include-request":
+            if i + 1 >= len(argv):
+                print("Error: --include-request requires a value", file=sys.stderr)
+                sys.exit(2)
+            include_request_raw.append(argv[i + 1])
+            i += 2
+        elif token == "--exclude-request":
+            if i + 1 >= len(argv):
+                print("Error: --exclude-request requires a value", file=sys.stderr)
+                sys.exit(2)
+            exclude_request_raw.append(argv[i + 1])
+            i += 2
         elif token == "--percentile":
             if i + 1 >= len(argv) or argv[i + 1] not in ("50", "75", "95", "99"):
                 print("Error: --percentile requires one of: 50, 75, 95, 99", file=sys.stderr)
@@ -179,6 +221,9 @@ def _main_compare(argv: list[str]) -> None:
         else:
             inputs.append((Path(token), None))
             i += 1
+
+    include_request = _compile_filter_patterns("--include-request", include_request_raw)
+    exclude_request = _compile_filter_patterns("--exclude-request", exclude_request_raw)
 
     if len(inputs) < 2:
         print("Error: compare requires at least two input directories", file=sys.stderr)
@@ -206,7 +251,10 @@ def _main_compare(argv: list[str]) -> None:
         "99th": "99th Percentile Response Time (p99)",
     }
 
-    collected = [collect_compare_input(path, label, exclude) for path, label in inputs]
+    collected = [
+        collect_compare_input(path, label, exclude, include_request, exclude_request)
+        for path, label in inputs
+    ]
 
     print(
         format_compare_markdown(
@@ -303,6 +351,31 @@ Examples:
         help="Exclude directories containing this string (e.g., 'warmup')",
     )
     parser.add_argument(
+        "--include-request",
+        action="append",
+        default=[],
+        metavar="REGEX",
+        help=(
+            "Keep only requests whose displayed full path matches REGEX. "
+            "Repeatable; multiple flags OR together. "
+            "Python `re` syntax (https://docs.python.org/3/library/re.html). "
+            "Example: '^Get ANC'"
+        ),
+    )
+    parser.add_argument(
+        "--exclude-request",
+        action="append",
+        default=[],
+        metavar="REGEX",
+        help=(
+            "Drop requests whose displayed full path matches REGEX. "
+            "Repeatable; multiple flags OR together. Wins over "
+            "--include-request when a request matches both. "
+            "Python `re` syntax (https://docs.python.org/3/library/re.html). "
+            "Example: '^Login$'"
+        ),
+    )
+    parser.add_argument(
         "--combine",
         action="store_true",
         help=(
@@ -326,7 +399,12 @@ Examples:
         print(f"Path is not a directory: {args.report_directory}", file=sys.stderr)
         sys.exit(1)
 
-    gatling_data = load_gatling_data(args.report_directory, args.exclude)
+    include_request = _compile_filter_patterns("--include-request", args.include_request)
+    exclude_request = _compile_filter_patterns("--exclude-request", args.exclude_request)
+
+    gatling_data = load_gatling_data(
+        args.report_directory, args.exclude, include_request, exclude_request
+    )
 
     if args.plot:
         match args.plot:
